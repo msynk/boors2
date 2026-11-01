@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.boors-data/
+.screenshots/
+*.user
+AppPackages/
+BundleArtifacts/
+publish/
+TestResults/

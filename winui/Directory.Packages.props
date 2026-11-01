@@ -1,0 +1,24 @@
+<Project>
+    <!-- Central package management (https://learn.microsoft.com/nuget/consume-packages/central-package-management). -->
+    <!-- Market-data versions are the ones the boilerplate pins; desktop packages are the latest stable releases. -->
+    <ItemGroup>
+        <!-- Boors.Market -->
+        <PackageVersion Include="DNTPersianUtils.Core" Version="7.0.2" />
+        <PackageVersion Include="YamlDotNet" Version="18.1.0" />
+        <PackageVersion Include="DuckDB.NET.Data.Full" Version="1.5.6.1" />
+        <PackageVersion Include="Jint" Version="4.17.0" />
+        <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
+        <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.13" />
+        <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.13" />
+
+        <!-- Tests -->
+        <PackageVersion Include="MSTest" Version="4.4.1" />
+        <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+
+        <!-- Boors.Desktop (WinUI 3) -->
+        <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+        <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+        <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+        <PackageVersion Include="ScottPlot.WinUI" Version="5.1.59" />
+    </ItemGroup>
+</Project>

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.OverviewPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    Background="Transparent">
+
+    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="24,12,24,24" Spacing="16">
+            <!-- Header: session, status, refresh -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <TextBlock Text="{l:L K='Market overview'}" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="{x:Bind ViewModel.SessionText, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+                <ProgressRing Grid.Column="1" IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" HorizontalAlignment="Left" />
+                <Button AutomationProperties.Name="{l:L K='Reload'}" Grid.Column="2" Click="OnRefresh" ToolTipService.ToolTip="{l:L K='Reload (F5)'}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock Text="{l:L K='Reload'}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not load the market data'}"
+                     IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+
+            <!-- Empty state: no store yet -->
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.IsEmpty, Mode=OneWay}" Padding="24">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="{l:L K='No market data yet'}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" Text="{x:Bind ViewModel.EmptyText, Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Style="{StaticResource AccentButtonStyle}" Click="OnOpenHealth" Content="{x:Bind ViewModel.EmptyAction, Mode=OneWay}" />
+                        <Button Click="OnOpenSettings" Content="{l:L K='Choose a data folder'}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- KPI tiles -->
+            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Kpis, Mode=OneWay}">
+                <ItemsRepeater.Layout>
+                    <UniformGridLayout MinItemWidth="208" MinItemHeight="112" MinColumnSpacing="10" MinRowSpacing="10" ItemsStretch="Fill" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vm:KpiItem">
+                        <controls:KpiTile Item="{x:Bind}" />
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+
+            <Grid x:Name="ChartsGrid" ColumnSpacing="16" RowSpacing="16" Visibility="{x:Bind ViewModel.HasData, Mode=OneWay}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- TEDPIX, 1 year: rial or dollars indexed to 100 (never a dual axis) -->
+                <Border x:Name="IndexCard" Style="{StaticResource CardStyle}">
+                    <Grid RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="320" />
+                        </Grid.RowDefinitions>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock x:Name="IndexTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.IndexSummary, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" />
+                            </StackPanel>
+                            <controls:Segmented x:Name="DenominationSwitch" Grid.Column="1" VerticalAlignment="Top" />
+                        </Grid>
+                        <!-- The chart control (SkiaSharp) is created with the first data, after the first frame. -->
+                        <Border x:Name="IndexChartHost" Grid.Row="1" />
+                    </Grid>
+                </Border>
+
+                <!-- Breadth, 60 sessions -->
+                <Border x:Name="BreadthCard" Grid.Column="1" Style="{StaticResource CardStyle}">
+                    <Grid RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" MinHeight="220" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{l:L K='Breadth, 60 sessions'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.BreadthSummary, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" />
+                        </StackPanel>
+                        <controls:BreadthBars Grid.Row="1" Days="{x:Bind ViewModel.BreadthDays, Mode=OneWay}" />
+                        <!-- Legend: direct labels with markers, never colour alone -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{x:Bind l:Palette.UpBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{l:L K='Advancers'}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{x:Bind l:Palette.NeutralBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{l:L K='Unchanged'}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{x:Bind l:Palette.DownBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{l:L K='Decliners'}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Rectangle Width="10" Height="10" RadiusX="2" RadiusY="2" Fill="{x:Bind l:Palette.MutedBrush}" VerticalAlignment="Center" />
+                                <TextBlock Text="{l:L K='Not traded'}" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Sector returns today: sorted diverging bars -->
+                <Border x:Name="SectorsCard" Grid.Row="1" Grid.Column="1" Style="{StaticResource CardStyle}" VerticalAlignment="Top">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{l:L K='Sectors today (market-cap weighted)'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{l:L K='Fixed scale: at least the ±3% daily limit. Click a sector to filter the market watch.'}" Style="{StaticResource MutedTextStyle}" Margin="0,0,0,8" />
+                        <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto" Padding="0,0,12,0">
+                            <controls:DivergingBars x:Name="SectorBars" Bars="{x:Bind ViewModel.SectorBars, Mode=OneWay}" />
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+
+                <!-- Movers -->
+                <Border x:Name="MoversCard" Grid.Row="1" Style="{StaticResource CardStyle}" VerticalAlignment="Top">
+                    <Grid RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{l:L K='Movers'}" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                            <SelectorBar x:Name="MoverTabs" Grid.Column="1" SelectionChanged="OnMoverTabChanged" />
+                        </Grid>
+                        <controls:DataTable x:Name="MoversTable" Grid.Row="1" Height="500" Items="{x:Bind ViewModel.Movers, Mode=OneWay}" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,29 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+  </Configurations>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitignore" />
+    <File Path="AGENTS.md" />
+    <File Path="CLAUDE.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="nuget.config" />
+    <File Path="README.md" />
+    <File Path="rules/rules.yaml" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Boors.Market/Boors.Market.csproj" />
+    <Project Path="src/Boors.Market.Cli/Boors.Market.Cli.csproj" />
+    <Project Path="src/Boors.Market.Tests/Boors.Market.Tests.csproj" />
+    <Project Path="src/Boors.Market.Services/Boors.Market.Services.csproj" />
+    <Project Path="src/Boors.Market.Services.Tests/Boors.Market.Services.Tests.csproj" />
+    <Project Path="src/Boors.Node/Boors.Node.csproj" />
+    <Project Path="src/Boors.Desktop/Boors.Desktop.csproj">
+      <Platform Solution="*|Any CPU" Project="x64" />
+    </Project>
+  </Folder>
+</Solution>

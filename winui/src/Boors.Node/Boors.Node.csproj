@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <RootNamespace>Boors.Node</RootNamespace>
+        <Description>Lean Boors node: the boilerplate's market read API, data health, the single-writer collection job queue with the Iran-time schedule, and raw-cache bundle sync between nodes. No Blazor, Identity, EF Core, PostgreSQL or Hangfire.</Description>
+        <InvariantGlobalization>false</InvariantGlobalization>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Boors.Market.Services\Boors.Market.Services.csproj" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <!-- 19041 projection, runs on Windows 10 1809+ (17763); developed on Windows 10 22H2 (19045). -->
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+        <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+        <RootNamespace>Boors.Desktop</RootNamespace>
+        <AssemblyName>Boors.Desktop</AssemblyName>
+        <Description>Boors analysis workstation for the Iranian stock market (WinUI 3).</Description>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+        <Platforms>x64</Platforms>
+        <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x64</Platform>
+        <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+        <UseWinUI>true</UseWinUI>
+
+        <!-- Unpackaged: dotnet run / the exe works without installing an MSIX; the Windows App SDK runtime ships next to the exe. -->
+        <WindowsPackageType>None</WindowsPackageType>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+        <EnableMsixTooling>true</EnableMsixTooling>
+
+        <!-- MVVM Toolkit partial-property generators and CsWinRT interop (x:Bind needs no reflection). -->
+        <NoWarn>$(NoWarn);CsWinRT1028</NoWarn>
+        <GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+        <!--
+        Publish (see README): ReadyToRun precompiles the app and its libraries, which roughly halves JIT time at startup.
+        Trimming and Native AOT are off: DuckDB.NET, Jint and the configuration binder use reflection that is not
+        annotated for trimming, so a trimmed build would need a curated root list before it is safe.
+        -->
+        <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
+        <PublishTrimmed>false</PublishTrimmed>
+        <SelfContained Condition="'$(SelfContained)' == ''">false</SelfContained>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.WindowsAppSDK" />
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" />
+        <PackageReference Include="CommunityToolkit.Mvvm" />
+        <PackageReference Include="ScottPlot.WinUI" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Boors.Market.Services\Boors.Market.Services.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+</Project>

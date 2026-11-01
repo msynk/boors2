@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.HealthPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    Background="Transparent">
+
+    <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="24,12,24,24" Spacing="16">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{l:L K='Market data health'}" Style="{StaticResource PageTitleStyle}" VerticalAlignment="Center" />
+                <Border x:Name="OverallBadge" Grid.Column="1" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                    <TextBlock x:Name="OverallText" FontWeight="SemiBold" />
+                </Border>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                    <ProgressRing IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" />
+                </StackPanel>
+                <Button AutomationProperties.Name="{l:L K='Reload'}" Grid.Column="3" Click="OnReload">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock Text="{l:L K='Reload'}" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not read the data health'}"
+                     IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+            <InfoBar Severity="Informational" IsClosable="True"
+                     IsOpen="{x:Bind l:Bools.HasText(ViewModel.Notice), Mode=OneWay}" Message="{x:Bind ViewModel.Notice, Mode=OneWay}" />
+
+            <!-- Data collection: a summary; the job monitor has the rest -->
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{l:L K='Data collection'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind ViewModel.CollectionText, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Center" Click="OnOpenJobs">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE81C;" FontSize="14" />
+                            <TextBlock Text="{l:L K='Open the job monitor'}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Sync from another node: download its raw-cache bundle, import, reload the store -->
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="{l:L K='Sync from node'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Style="{StaticResource MutedTextStyle}"
+                               Text="{l:L K='Pulls another node’s raw responses (the same cache format as every Boors implementation), imports the new files and replays the cache into the store. Existing files are never overwritten.'}" />
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="NodeUrlBox" Header="{l:L K='Node URL'}" FlowDirection="LeftToRight" Text="{x:Bind ViewModel.NodeUrl, Mode=OneWay}" PlaceholderText="http://iran-1:5080/" />
+                        <CalendarDatePicker x:Name="SincePicker" Grid.Column="1" Header="{l:L K='Since (optional)'}" PlaceholderText="{l:L K='Everything'}" />
+                        <PasswordBox x:Name="TokenBox" Grid.Column="2" Header="{l:L K='Operator token (if the node requires one)'}" />
+                        <Button AutomationProperties.Name="{l:L K='Pull'}" Grid.Column="3" Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Bottom" Click="OnPull">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon Glyph="&#xE895;" FontSize="14" />
+                                <TextBlock Text="{l:L K='Pull'}" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{l:L K='Datasets'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <controls:DataTable x:Name="DatasetsTable" Height="440" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{l:L K='Last runs'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <controls:DataTable x:Name="RunsTable" Height="320" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="{l:L K='Sources'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="ProbeText" Style="{StaticResource MutedTextStyle}" />
+                    <controls:DataTable x:Name="SourcesTable" Height="320" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

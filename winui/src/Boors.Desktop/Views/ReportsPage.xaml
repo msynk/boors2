@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.ReportsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    xmlns:charts="using:Boors.Desktop.Charts"
+    Background="Transparent">
+
+    <Grid Padding="24,12,24,16" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="160" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Title, progress, liquidity filter, sector filter, export -->
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{l:L K='Reports'}" Style="{StaticResource PageTitleStyle}" VerticalAlignment="Center" />
+            <ProgressRing Grid.Column="1" IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" HorizontalAlignment="Left" />
+            <Button x:Name="SectorChip" Grid.Column="2" Click="OnClearSector" VerticalAlignment="Center" AutomationProperties.Name="{l:L K='Show every sector'}"
+                    ToolTipService.ToolTip="{l:L K='Show every sector'}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{x:Bind ViewModel.SectorFilterText, Mode=OneWay}" MaxWidth="280" TextTrimming="CharacterEllipsis" />
+                    <FontIcon Glyph="&#xE711;" FontSize="12" />
+                </StackPanel>
+            </Button>
+            <StackPanel x:Name="LiquidityPanel" Grid.Column="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="{l:L K='Liquidity'}" VerticalAlignment="Center" />
+                <ComboBox x:Name="LiquidityBox" MinWidth="200" SelectionChanged="OnLiquidityChanged"
+                          AutomationProperties.Name="{l:L K='Minimum average value traded per session over the 20 sessions up to the base date'}"
+                          ToolTipService.ToolTip="{l:L K='Minimum average value traded per session over the 20 sessions up to the base date'}" />
+            </StackPanel>
+            <Button AutomationProperties.Name="{l:L K='CSV'}" Grid.Column="4" Click="OnExport" ToolTipService.ToolTip="{l:L K='Export the table as CSV (UTF-8, ASCII numbers)'}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                    <TextBlock Text="{l:L K='CSV'}" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <SelectorBar x:Name="ReportBar" Grid.Row="1" SelectionChanged="OnReportChanged" />
+
+        <!-- Window of the selected report: a period or a custom range, ending on a base date -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="16">
+            <controls:Segmented x:Name="PeriodSwitch" Compact="True" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <CalendarDatePicker x:Name="FromPicker" Width="150" DateChanged="OnFromChanged" PlaceholderText="{l:L K='Start'}"
+                                    AutomationProperties.Name="{l:L K='Start of the custom range'}" ToolTipService.ToolTip="{l:L K='Start of the custom range'}" />
+                <TextBlock x:Name="RangeDash" Text="–" VerticalAlignment="Center" />
+                <CalendarDatePicker x:Name="EndPicker" Width="150" DateChanged="OnEndChanged" PlaceholderText="{l:L K='Latest session'}"
+                                    AutomationProperties.Name="{l:L K='Base date'}"
+                                    ToolTipService.ToolTip="{l:L K='Base date: the window ends here and the ranking uses no later data. Empty means the latest session.'}" />
+                <Button x:Name="PreviousButton" Click="OnPrevious" AutomationProperties.Name="{l:L K='Previous period'}" ToolTipService.ToolTip="{l:L K='Previous period'}">
+                    <FontIcon Glyph="&#xE76B;" FontSize="12" MirroredWhenRightToLeft="True" />
+                </Button>
+                <Button x:Name="NextButton" Click="OnNext" AutomationProperties.Name="{l:L K='Next period'}" ToolTipService.ToolTip="{l:L K='Next period'}">
+                    <FontIcon Glyph="&#xE76C;" FontSize="12" MirroredWhenRightToLeft="True" />
+                </Button>
+                <Button x:Name="LatestButton" Click="OnLatest" Content="{l:L K='Latest'}" ToolTipService.ToolTip="{l:L K='Back to the latest session'}" />
+            </StackPanel>
+            <controls:Segmented x:Name="MeasureSwitch" Compact="True" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="3" Spacing="4">
+            <TextBlock Text="{x:Bind ViewModel.Description, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" />
+            <TextBlock Text="{x:Bind ViewModel.Summary, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" Visibility="{x:Bind vm:Ui.ShowText(ViewModel.Summary), Mode=OneWay}" />
+            <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not build the report'}"
+                     IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+        </StackPanel>
+
+        <ItemsRepeater Grid.Row="4" ItemsSource="{x:Bind ViewModel.Kpis, Mode=OneWay}">
+            <ItemsRepeater.Layout>
+                <UniformGridLayout MinItemWidth="208" MinItemHeight="104" MinColumnSpacing="10" MinRowSpacing="10" ItemsStretch="Fill" MaximumRowsOrColumns="6" />
+            </ItemsRepeater.Layout>
+            <ItemsRepeater.ItemTemplate>
+                <DataTemplate x:DataType="vm:KpiItem">
+                    <controls:KpiTile Item="{x:Bind}" />
+                </DataTemplate>
+            </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+
+        <Border Grid.Row="5" Style="{StaticResource CardStyle}" Padding="0">
+            <controls:DataTable x:Name="Table" FrozenColumns="1" />
+        </Border>
+
+        <!-- Signal track record: the selected rule's record and today's picks -->
+        <Grid Grid.Row="6" Height="300" ColumnSpacing="12" Visibility="{x:Bind vm:Ui.Show(ViewModel.IsSignals), Mode=OneWay}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="420" />
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource CardStyle}">
+                <Grid RowSpacing="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.ChartTitle, Mode=OneWay}" Style="{StaticResource SectionTitleStyle}" TextTrimming="CharacterEllipsis" />
+                    <charts:TimeSeriesChart x:Name="SignalChart" Grid.Row="1" />
+                </Grid>
+            </Border>
+            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Padding="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.PicksTitle, Mode=OneWay}" Style="{StaticResource SectionTitleStyle}" Margin="12,10,12,6" TextWrapping="WrapWholeWords" MaxLines="2" />
+                    <controls:DataTable x:Name="PicksTable" Grid.Row="1" Items="{x:Bind ViewModel.Picks, Mode=OneWay}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <TextBlock Grid.Row="7" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
+                   Text="{l:L K='Reports describe the past with adjusted, point-in-time prices (capital increases and dividends included). They are a starting point for research, not buy or sell advice: past winners often stop winning, so check the signal track record before trusting a ranking.'}" />
+    </Grid>
+</Page>

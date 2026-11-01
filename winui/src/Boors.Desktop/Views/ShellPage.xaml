@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.ShellPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    Background="Transparent">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Modifiers="Control" Key="K" Invoked="OnPaletteAccelerator" />
+        <KeyboardAccelerator Modifiers="Control" Key="F" Invoked="OnSearchAccelerator" />
+        <KeyboardAccelerator Key="F5" Invoked="OnReloadAccelerator" />
+    </Page.KeyboardAccelerators>
+
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TitleBar x:Name="AppTitleBar"
+                  Title="{l:L K='Boors'}"
+                  Subtitle="{l:L K='Tehran Stock Exchange workstation'}"
+                  IsBackButtonVisible="True"
+                  IsBackButtonEnabled="False"
+                  IsPaneToggleButtonVisible="True"
+                  BackRequested="OnBackRequested"
+                  PaneToggleRequested="OnPaneToggleRequested">
+            <TitleBar.IconSource>
+                <FontIconSource Glyph="&#xE9D2;" />
+            </TitleBar.IconSource>
+            <AutoSuggestBox x:Name="SearchBox"
+                            Width="380"
+                            VerticalAlignment="Center"
+                            PlaceholderText="{l:L K='Search symbols (Ctrl+F)'}"
+                            QueryIcon="Find"
+                            ItemsSource="{x:Bind ViewModel.Suggestions, Mode=OneWay}"
+                            TextChanged="OnSearchTextChanged"
+                            QuerySubmitted="OnSearchSubmitted"
+                            UpdateTextOnSelect="False">
+                <AutoSuggestBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PaletteEntry">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                            <TextBlock Text="{x:Bind Subtitle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </DataTemplate>
+                </AutoSuggestBox.ItemTemplate>
+            </AutoSuggestBox>
+            <TitleBar.RightHeader>
+                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,4,0" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,0,8,0"
+                                Visibility="{x:Bind ViewModel.JobRunning, Mode=OneWay}"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.JobText, Mode=OneWay}">
+                        <ProgressRing IsActive="{x:Bind ViewModel.JobRunning, Mode=OneWay}" Width="16" Height="16" />
+                        <TextBlock Text="{x:Bind ViewModel.JobText, Mode=OneWay}" MaxWidth="260" TextTrimming="CharacterEllipsis"
+                                   Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button AutomationProperties.Name="{l:L K='Command palette (Ctrl+K)'}" x:Name="PaletteButton" Click="OnPaletteButton" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="{l:L K='Command palette (Ctrl+K)'}" Padding="8,4">
+                        <FontIcon Glyph="&#xE756;" FontSize="14" />
+                    </Button>
+                    <Button AutomationProperties.Name="{l:L K='Switch language (فارسی / English)'}" x:Name="LanguageButton" Click="OnLanguageButton" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="{l:L K='Switch language (فارسی / English)'}" Padding="8,4">
+                        <TextBlock x:Name="LanguageButtonText" FontSize="12" />
+                    </Button>
+                    <Button AutomationProperties.Name="{l:L K='Toggle dark / light theme'}" x:Name="ThemeButton" Click="OnThemeButton" Style="{StaticResource SubtleButtonStyle}" ToolTipService.ToolTip="{l:L K='Toggle dark / light theme'}" Padding="8,4">
+                        <FontIcon Glyph="&#xE793;" FontSize="14" />
+                    </Button>
+                </StackPanel>
+            </TitleBar.RightHeader>
+        </TitleBar>
+
+        <NavigationView x:Name="Nav"
+                        Grid.Row="1"
+                        PaneDisplayMode="Left"
+                        IsBackButtonVisible="Collapsed"
+                        IsPaneToggleButtonVisible="False"
+                        IsSettingsVisible="False"
+                        OpenPaneLength="220"
+                        CompactModeThresholdWidth="900"
+                        ExpandedModeThresholdWidth="1300"
+                        ItemInvoked="OnNavItemInvoked">
+            <NavigationView.MenuItems>
+                <NavigationViewItem Content="{l:L K='Overview'}" Tag="overview">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE80F;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Market watch'}" Tag="watch">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE71D;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Screens'}" Tag="screens">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE71C;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Reports'}" Tag="reports">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE9F9;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Data health'}" Tag="health">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE95E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Data collection'}" Tag="jobs">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE81C;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <!-- Jobs that failed since the page was last open -->
+                        <InfoBadge Value="{x:Bind ViewModel.JobsBadge, Mode=OneWay}" Visibility="{x:Bind vm:Ui.Show(ViewModel.HasJobsBadge), Mode=OneWay}"
+                                   AutomationProperties.Name="{x:Bind ViewModel.JobsBadgeText, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ViewModel.JobsBadgeText, Mode=OneWay}" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem Content="{l:L K='Settings'}" Tag="settings">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE713;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+            <Frame x:Name="ContentFrame" />
+        </NavigationView>
+
+        <!-- Command palette: keyboard-first symbol and command search (Ctrl+K). -->
+        <Grid x:Name="PaletteOverlay" Grid.RowSpan="2" Visibility="Collapsed" Background="{ThemeResource SmokeFillColorDefaultBrush}" Tapped="OnOverlayTapped">
+            <Border Width="640" MaxHeight="520" VerticalAlignment="Top" Margin="0,72,0,0" Padding="8"
+                    Background="{ThemeResource AcrylicInAppFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource SurfaceStrokeColorFlyoutBrush}" BorderThickness="1" CornerRadius="8"
+                    Tapped="OnPaletteTapped">
+                <Grid RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBox x:Name="PaletteBox" PlaceholderText="{l:L K='Type a symbol, a company or a command…'}"
+                             TextChanged="OnPaletteTextChanged" KeyDown="OnPaletteKeyDown" />
+                    <ListView x:Name="PaletteList" Grid.Row="1" SelectionMode="Single" IsItemClickEnabled="True" ItemClick="OnPaletteItemClick"
+                              ItemsSource="{x:Bind ViewModel.PaletteEntries, Mode=OneWay}">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PaletteEntry">
+                                <Grid ColumnSpacing="12" Padding="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind Subtitle}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock Grid.Row="2" Style="{StaticResource MutedTextStyle}" Text="{l:L K='↑ ↓ to choose · Enter to run · Esc to close · start with &gt; for commands only'}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

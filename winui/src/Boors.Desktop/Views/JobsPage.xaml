@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.JobsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    Background="Transparent">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition x:Name="DetailColumn" Width="0" />
+        </Grid.ColumnDefinitions>
+
+        <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="24,12,24,24" Spacing="16">
+                <!-- Title, status, background download, run a job, reload -->
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{l:L K='Data collection'}" Style="{StaticResource PageTitleStyle}" VerticalAlignment="Center" />
+                    <Border x:Name="StateBadge" Grid.Column="1" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                        <TextBlock x:Name="StateText" FontWeight="SemiBold" />
+                    </Border>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <ProgressRing IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" />
+                    </StackPanel>
+                    <ToggleSwitch x:Name="AutoDownloadSwitch" Grid.Column="3" MinWidth="0" VerticalAlignment="Center"
+                                  OnContent="" OffContent=""
+                                  AutomationProperties.Name="{l:L K='Download market data automatically in the background'}"
+                                  ToolTipService.ToolTip="{l:L K='Download market data automatically in the background'}" Toggled="OnAutoDownload" />
+                    <DropDownButton x:Name="RunButton" Grid.Column="4" AutomationProperties.Name="{l:L K='Run a job'}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                            <TextBlock Text="{l:L K='Run a job'}" />
+                        </StackPanel>
+                        <DropDownButton.Flyout>
+                            <MenuFlyout x:Name="RunMenu" Placement="BottomEdgeAlignedRight" />
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                    <Button Grid.Column="5" AutomationProperties.Name="{l:L K='Reload'}" Click="OnReload">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                            <TextBlock Text="{l:L K='Reload'}" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not read the jobs'}"
+                         IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+                <InfoBar x:Name="NoticeBar" Severity="Informational" IsClosable="True"
+                         IsOpen="{x:Bind l:Bools.HasText(ViewModel.Notice), Mode=OneWay}" Message="{x:Bind ViewModel.Notice, Mode=OneWay}" Closed="OnNoticeClosed" />
+
+                <!-- The period: statistics, charts and history -->
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock Text="{l:L K='Period'}" Style="{StaticResource MutedTextStyle}" VerticalAlignment="Center" />
+                    <controls:Segmented x:Name="PeriodSwitch" Compact="True" />
+                </StackPanel>
+
+                <ItemsRepeater ItemsSource="{x:Bind ViewModel.Kpis, Mode=OneWay}">
+                    <ItemsRepeater.Layout>
+                        <UniformGridLayout MinItemWidth="208" MinItemHeight="112" MinColumnSpacing="10" MinRowSpacing="10" ItemsStretch="Fill" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:KpiItem">
+                            <controls:KpiTile Item="{x:Bind}" />
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+
+                <!-- The running job, live -->
+                <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind vm:Ui.ShowValue(ViewModel.Running), Mode=OneWay}">
+                    <Grid ColumnSpacing="12" RowSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="{x:Bind ViewModel.RunningTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <StackPanel Grid.Column="1" Grid.RowSpan="3" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Content="{l:L K='Show log'}" Click="OnShowRunningLog" />
+                            <Button x:Name="CancelRunningButton" Content="{l:L K='Cancel'}" Click="OnCancelRunning" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="1" Text="{x:Bind ViewModel.RunningProgress, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" FlowDirection="LeftToRight" HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Row="2" Text="{x:Bind ViewModel.RunningCounters, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" />
+                        <ProgressBar Grid.Row="3" Grid.ColumnSpan="2" IsIndeterminate="True" />
+                    </Grid>
+                </Border>
+
+                <!-- Charts -->
+                <Grid x:Name="ChartsGrid" ColumnSpacing="16" RowSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border x:Name="DailyCard" Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{x:Bind ViewModel.DailyTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <controls:ColumnChart Columns="{x:Bind ViewModel.DailyColumns, Mode=OneWay}" Height="170" />
+                            <!-- Legend: swatch, icon and name (the status colour is never the only cue) -->
+                            <VariableSizedWrapGrid x:Name="Legend" Orientation="Horizontal" ItemWidth="112" ItemHeight="22" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="DurationCard" Grid.Column="1" Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{x:Bind ViewModel.DurationTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <controls:ColumnChart Columns="{x:Bind ViewModel.DurationColumns, Mode=OneWay}" Height="170" />
+                            <TextBlock Text="{x:Bind ViewModel.DurationNote, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Every job: record over the period, schedule, next run -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="8">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{l:L K='Jobs'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="{l:L K='Select a job to show its runs and run time. Recent runs read oldest to newest: ✓ OK, ↷ skipped, ⚠ partial, ✕ failed, ⊘ cancelled.'}" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                            <Button x:Name="RunSelectedButton" Grid.Column="1" VerticalAlignment="Center" IsEnabled="False" Click="OnRunSelected">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                    <TextBlock x:Name="RunSelectedText" Text="{l:L K='Run now'}" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <controls:DataTable x:Name="JobsTable" Height="390" FrozenColumns="1" />
+                    </StackPanel>
+                </Border>
+
+                <!-- This session's queue -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="8">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{l:L K='Queue'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock x:Name="QueueHint" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                            <Button Grid.Column="1" VerticalAlignment="Center" Content="{l:L K='Cancel waiting jobs'}" Click="OnCancelWaiting"
+                                    IsEnabled="{x:Bind ViewModel.HasWaiting, Mode=OneWay}" />
+                        </Grid>
+                        <controls:DataTable x:Name="QueueTable" Height="260" FrozenColumns="1" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Run history -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{l:L K='Run history'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <Grid ColumnSpacing="12" RowSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox x:Name="JobBox" MinWidth="200" AutomationProperties.Name="{l:L K='Job'}" SelectionChanged="OnJobFilter" />
+                            <controls:Segmented x:Name="StatusSwitch" Grid.Column="1" Compact="True" />
+                            <TextBox x:Name="SearchBox" Grid.Column="2" PlaceholderText="{l:L K='Search messages, jobs and run ids'}" AutomationProperties.Name="{l:L K='Search'}" TextChanged="OnSearch" />
+                            <Button Grid.Column="3" AutomationProperties.Name="{l:L K='Export CSV'}" Click="OnExport">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                                    <TextBlock Text="{l:L K='Export CSV'}" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <TextBlock Text="{x:Bind ViewModel.HistorySummary, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" />
+                        <controls:DataTable x:Name="HistoryTable" Height="480" FrozenColumns="1" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Network traffic -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="{l:L K='Network traffic'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind ViewModel.TrafficNote, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" />
+                        <controls:DataTable x:Name="TrafficTable" Height="220" FrozenColumns="1" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Detail pane: a run of the history or an entry of the queue, with its log -->
+        <Border x:Name="DetailPane" Grid.Column="1" Visibility="Collapsed" Padding="16,12" BorderThickness="1,0,0,0"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource LayerFillColorDefaultBrush}">
+            <Grid RowSpacing="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Name="DetailTitle" Style="{StaticResource SubtitleTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                        <Border x:Name="DetailBadge" CornerRadius="4" Padding="8,2" HorizontalAlignment="Left">
+                            <TextBlock x:Name="DetailStatus" FontWeight="SemiBold" />
+                        </Border>
+                    </StackPanel>
+                    <Button Grid.Column="1" Style="{StaticResource SubtleButtonStyle}" VerticalAlignment="Top" Click="OnCloseDetail"
+                            AutomationProperties.Name="{l:L K='Close'}" ToolTipService.ToolTip="{l:L K='Close'}">
+                        <FontIcon Glyph="&#xE711;" FontSize="14" />
+                    </Button>
+                </Grid>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+                    <Button x:Name="DetailCancel" Content="{l:L K='Cancel'}" Click="OnDetailCancel" />
+                    <Button x:Name="DetailRunAgain" Click="OnDetailRunAgain">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                            <TextBlock Text="{l:L K='Run again'}" />
+                        </StackPanel>
+                    </Button>
+                    <Button Click="OnCopyLog" AutomationProperties.Name="{l:L K='Copy the log'}" ToolTipService.ToolTip="{l:L K='Copy the log'}">
+                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                    </Button>
+                    <Button x:Name="OpenLogsButton" Click="OnOpenLogs" AutomationProperties.Name="{l:L K='Open the log folder'}" ToolTipService.ToolTip="{l:L K='Open the log folder'}">
+                        <FontIcon Glyph="&#xE838;" FontSize="14" />
+                    </Button>
+                </StackPanel>
+
+                <ItemsRepeater x:Name="DetailFields" Grid.Row="2">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Spacing="2" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vm:DetailField">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{x:Bind Label}" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind Value}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+
+                <TextBlock x:Name="DetailMessage" Grid.Row="3" IsTextSelectionEnabled="True" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" />
+
+                <Grid Grid.Row="4" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{l:L K='Log'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind ViewModel.LogNote, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                    </StackPanel>
+                    <CheckBox x:Name="ProblemsOnlyBox" Grid.Column="1" Content="{l:L K='Warnings and errors only'}" MinWidth="0" Click="OnProblemsOnly" />
+                </Grid>
+
+                <ScrollViewer Grid.Row="5" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled">
+                    <ItemsRepeater ItemsSource="{x:Bind ViewModel.LogRows, Mode=OneWay}">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Spacing="2" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LogRow">
+                                <Grid ColumnSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="62" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind Time}" FontSize="12" Foreground="{x:Bind l:Palette.TextSecondary}" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Icon}" FontSize="12" Foreground="{x:Bind l:Palette.ToneBrush(Tone)}" />
+                                    <TextBlock Grid.Column="2" Text="{x:Bind Message}" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" FlowDirection="LeftToRight" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

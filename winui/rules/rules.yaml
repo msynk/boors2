@@ -1,0 +1,107 @@
+# Dated market rules for the Tehran Stock Exchange (TSE) and Iran Fara Bourse (IFB).
+#
+# How it is read (see Boors.Market/Rules/MarketRules.cs):
+# - Blocks are applied in `from` order. Each block overrides only the keys it names; everything else carries over
+#   from earlier blocks. A rule is therefore "in force from `from` until a later block sets the same key".
+# - Map keys are instrument classes (InstrumentClass in Boors.Market, written in snake_case).
+#   For a class, the latest block that names it or sets `default` wins; inside one block an explicit class entry
+#   beats `default`. So a later `default` overrides every class that block does not name.
+# - `confidence` records how well the start date is sourced: high = official notice or primary data,
+#   medium = several secondary sources, low = inferred or approximate. Low-confidence dates must be
+#   re-checked against the data (e.g., allowed min/max price vs the previous close) before research relies on them.
+#
+# Sources: reports/Iran stock market app feasibility.md and reports/Iran stock app plan round 2.md.
+
+version: 1
+
+blocks:
+  - from: 2000-01-01
+    confidence: low
+    note: >-
+      Placeholder for the long pre-2025 era. Daily limits varied over time (commonly ±5%, at times narrower or
+      asymmetric). Replace with dated blocks inferred from psGelStaMax/psGelStaMin history before using pre-2025
+      backtests.
+    price_limit:
+      default: 0.05
+    close_method:
+      default: base_volume_weighted
+    session:
+      default: { continuous: "09:00-12:30" }
+    costs:
+      exchange: 0.00155
+      csd: 0.00100
+      technology: 0.00065
+      brokerage_max: 0.00144
+      sale_tax: 0.005
+
+  - from: 2025-01-01
+    confidence: low
+    note: >-
+      ±3% crisis-era limits. In force before the June 2025 war and kept through both wars; reconfirmed by the SEO in
+      Ordibehesht 1405 (May 2026). The exact ±5% -> ±3% switch date is unknown; infer it from the data.
+    price_limit:
+      default: 0.03
+      tse_stock: 0.03
+      ifb_stock: 0.03
+      rights: 0.03
+      etf_equity: 0.03
+      etf_fixed_income: 0.03
+      etf_real_estate: 0.03
+      etf_mixed: 0.03
+      fund_of_funds: 0.03
+      fund_leveraged: 0.04
+      fund_gold_silver: 0.10
+      ifb_base_yellow: 0.03
+      ifb_base_orange: 0.02
+      ifb_base_red: 0.01
+
+  - from: 2025-09-23
+    confidence: medium
+    note: >-
+      1 Mehr 1404. IFB base market moves to a dynamic base volume. A "queue coefficient" revision
+      (traded volume / queue volume, bounded 0.5-1) was announced as planned on 26 Shahrivar 1405.
+    close_method:
+      ifb_base_yellow: dynamic_base_volume
+      ifb_base_orange: dynamic_base_volume
+      ifb_base_red: dynamic_base_volume
+
+  - from: 2025-12-22
+    confidence: high
+    note: >-
+      1 Dey 1404. Base volume set to 1 share on the TSE and IFB main markets (trading-knot rule dropped), so the
+      closing price is the day's VWAP. Closes before and after this date are not strictly comparable.
+    close_method:
+      tse_stock: vwap
+      ifb_stock: vwap
+      rights: vwap
+      etf_equity: vwap
+
+  - from: 2026-06-06
+    confidence: high
+    note: >-
+      16 Khordad 1405. Closing-price (TAL) stage 12:45-13:00 for TSE first- and second-board shares; TAL siblings
+      carry the suffix "۳" (previously "۴").
+    session:
+      default: { continuous: "09:00-12:30", tal: "12:45-13:00" }
+
+  - from: 2026-10-10
+    confidence: high
+    note: >-
+      18 Mehr 1405 (TSE; IFB from 19 Mehr). Non-equity ETFs trade until 18:00.
+    session:
+      etf_fixed_income: { continuous: "09:00-18:00" }
+      etf_real_estate: { continuous: "09:00-18:00" }
+      fund_of_funds: { continuous: "09:00-18:00" }
+
+# Rules that do not (yet) vary by date.
+settlement_days: 2
+reopen:
+  # Symbols reopen after a disclosure/AGM halt via an unlimited-band discontinuous auction.
+  method: unlimited_auction
+  disclosure_halt_max_business_days: 2
+
+# Market-wide closures seeded from the record. Further closures are detected from the data
+# (TEDPIX unchanged day over day while every symbol shows zero trades).
+known_closures:
+  - { from: 2025-06-14, to: 2025-06-25, reason: "June 2025 Israel-Iran war" }
+  - { from: 2026-02-28, to: 2026-05-18, reason: "Feb-May 2026 war; reopened 19 May 2026" }

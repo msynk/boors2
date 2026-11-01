@@ -1,0 +1,13 @@
+# Each implementation has its own .gitignore; this file covers what is common to all of them.
+
+# Local market data (raw cache, DuckDB stores) of any implementation
+.boors-data/
+
+# Playwright MCP output
+.playwright-mcp/
+
+# OS and editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp

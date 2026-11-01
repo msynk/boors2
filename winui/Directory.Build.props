@@ -1,0 +1,36 @@
+<Project>
+    <!--
+    Root of the self-contained WinUI implementation. This file deliberately does NOT import any Directory.Build.props
+    above winui/: MSBuild stops at the first one it finds, so nothing outside this folder takes part in the build.
+    -->
+    <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <LangVersion>14.0</LangVersion>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+        <NoWarn>$(NoWarn);CS1998;CS1591</NoWarn>
+        <WarningsAsErrors>$(WarningsAsErrors);CS0114;CS8785</WarningsAsErrors>
+
+        <Version>1.0.0</Version>
+        <Company>Boors</Company>
+        <Product>Boors</Product>
+        <NeutralLanguage>en-US</NeutralLanguage>
+        <InvariantGlobalization>false</InvariantGlobalization>
+        <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+
+        <!-- Keep build outputs inside each project folder (the default), never in a shared folder above winui/. -->
+        <UseArtifactsOutput>false</UseArtifactsOutput>
+    </PropertyGroup>
+
+    <!-- Global usings the market-data code was written against (they came from the boilerplate's solution-wide props). -->
+    <ItemGroup Condition="$(MSBuildProjectName.StartsWith('Boors.'))">
+        <Using Include="System.Net.Http" />
+        <Using Include="System.Text.Json" />
+        <Using Include="System.Text.Json.Serialization" />
+        <Using Include="System.Globalization" />
+        <Using Include="System.Diagnostics" />
+        <Using Include="Microsoft.Extensions.DependencyInjection" />
+        <Using Include="Microsoft.Extensions.DependencyInjection.Extensions" />
+    </ItemGroup>
+</Project>
