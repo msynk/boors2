@@ -4,6 +4,7 @@ using Boors.Market.Filters;
 using Boors.Market.Ingestion;
 using Boors.Market.Services.Contracts;
 using Boors.Market.Services.Jobs;
+using Boors.Market.Simulation;
 using Boors.Market.Sources;
 using Boors.Market.Sources.Tsetmc;
 using Boors.Market.Storage;
@@ -31,6 +32,8 @@ public sealed class LocalMarketApi(
     private MarketAnalytics Analytics => services.GetRequiredService<MarketAnalytics>();
 
     private MarketReports Reports => services.GetRequiredService<MarketReports>();
+
+    private MarketSimulator Simulator => services.GetRequiredService<MarketSimulator>();
 
     public Task<MarketOverviewDto?> GetOverviewAsync(string? date, CancellationToken cancellationToken)
     {
@@ -224,6 +227,24 @@ public sealed class LocalMarketApi(
     {
         var end = ParseDate(asOf);
         return Run(() => Reports.GetShortlist(end).ToDto(), cancellationToken);
+    }
+
+    public Task<List<SimulationPresetDto>> GetSimulationPresetsAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<List<SimulationPresetDto>>([.. SimulationPresets.All.Select(p => new SimulationPresetDto(p.Key, p.Settings.ToDto()))]);
+
+    public Task<SimulationResultDto> RunSimulationAsync(SimulationRunRequestDto request, CancellationToken cancellationToken)
+    {
+        var spec = request.Spec.ToDomain();
+        return Run(() => Simulator.Run(spec, request.Detail, cancellationToken).ToDto(), cancellationToken);
+    }
+
+    public Task<SimulationTuningDto> TuneSimulationAsync(SimulationTuneRequestDto request, CancellationToken cancellationToken)
+    {
+        var spec = request.Spec.ToDomain();
+        var objective = string.IsNullOrWhiteSpace(request.Objective) ? TuningObjective.Sharpe
+            : Enum.TryParse<TuningObjective>(request.Objective, ignoreCase: true, out var o) && Enum.IsDefined(o) ? o
+            : throw MarketApiException.BadRequest($"Unknown objective '{request.Objective}' (expected {string.Join(", ", Enum.GetNames<TuningObjective>())}).");
+        return Run(() => Simulator.Tune(spec, request.Years == 0 ? 3 : request.Years, objective, cancellationToken).ToDto(), cancellationToken);
     }
 
     public Task<MarketDataHealthDto> GetHealthAsync(CancellationToken cancellationToken) =>

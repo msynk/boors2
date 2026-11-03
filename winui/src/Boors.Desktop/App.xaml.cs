@@ -62,6 +62,9 @@ public partial class App : Application
         window.Activate();
         StartupClock.Mark("window");
 
+        // Simulations follow the market: replayed shortly after start-up and whenever a job brings new prices.
+        Get<SimulationTracker>().Start(Get<ShellViewModel>());
+
         // Background services (job worker, scheduler) start off the UI thread; the scheduler then catches up on the
         // jobs missed while the app was closed.
         _ = Task.Run(() => Host.StartAsync());
@@ -132,6 +135,11 @@ public partial class App : Application
         services.AddSingleton<HealthViewModel>();
         services.AddSingleton<JobsViewModel>();
         services.AddSingleton<SettingsViewModel>();
+        services.AddSingleton<SimulationStore>();
+        services.AddSingleton<SimulationTracker>();
+        services.AddSingleton<SimulationsViewModel>();
+        services.AddSingleton<SimulationViewModel>();
+        services.AddSingleton<SimulationEditorViewModel>();
         return builder.Build();
     }
 

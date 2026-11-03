@@ -71,6 +71,31 @@ public static class Palette
         _ => Neutral,
     };
 
+    /// <summary>Series colours for comparing entities (simulations, benchmarks); never cycled past the last slot.</summary>
+    public const int SeriesSlots = 6;
+
+    /// <summary>
+    /// Categorical colour of a slot, in a fixed order: violet (the accent), aqua, orange, blue, magenta, yellow — no
+    /// green or red, which mean up and down here. Validated against #202020 and #fbfbfb: every adjacent pair passes the
+    /// colour-vision-deficiency (ΔE ≥ 9.2) and normal-vision (≥ 19.3) separation, and the first three pass all pairs; in
+    /// light mode aqua, magenta and yellow are under 3:1 contrast, so charts using them carry a legend with values.
+    /// </summary>
+    public static Color Series(int slot) => (IsDark, Math.Clamp(slot, 0, SeriesSlots - 1)) switch
+    {
+        (true, 0) => Hex(0x9085E9),
+        (true, 1) => Hex(0x199E70),
+        (true, 2) => Hex(0xD95926),
+        (true, 3) => Hex(0x3987E5),
+        (true, 4) => Hex(0xD55181),
+        (true, _) => Hex(0xC98500),
+        (false, 0) => Hex(0x6250D6),
+        (false, 1) => Hex(0x1BAF7A),
+        (false, 2) => Hex(0xEB6834),
+        (false, 3) => Hex(0x2A78D6),
+        (false, 4) => Hex(0xE87BA4),
+        (false, _) => Hex(0xEDA100),
+    };
+
     /// <summary>A cached brush per tone; must be called on the UI thread.</summary>
     public static SolidColorBrush Brush(Tone tone)
     {

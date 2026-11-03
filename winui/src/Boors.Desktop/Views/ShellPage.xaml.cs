@@ -47,6 +47,14 @@ public sealed partial class ShellPage : Page
             {
                 navigator.OpenSymbol(insCode);
             }
+            else if (startPage.StartsWith("simulation:", StringComparison.OrdinalIgnoreCase))
+            {
+                navigator.Navigate(Navigator.Simulation, startPage[11..]);
+            }
+            else if (startPage.StartsWith("simulation-edit:", StringComparison.OrdinalIgnoreCase))
+            {
+                navigator.Navigate(Navigator.SimulationEditor, startPage[16..]);
+            }
             else if (startPage.StartsWith("reports:", StringComparison.OrdinalIgnoreCase))
             {
                 App.Get<ReportsViewModel>().Preselect(startPage[8..]);
@@ -86,7 +94,9 @@ public sealed partial class ShellPage : Page
 
     private void SyncSelection(string key)
     {
-        var item = Nav.MenuItems.Concat(Nav.FooterMenuItems).OfType<NavigationViewItem>().FirstOrDefault(i => (string)i.Tag == key);
+        // A simulation and its editor belong to the Simulations item.
+        var menuKey = key is Navigator.Simulation or Navigator.SimulationEditor ? Navigator.Simulations : key;
+        var item = Nav.MenuItems.Concat(Nav.FooterMenuItems).OfType<NavigationViewItem>().FirstOrDefault(i => (string)i.Tag == menuKey);
         Nav.SelectedItem = item; // null on the symbol workspace (not a menu page)
     }
 

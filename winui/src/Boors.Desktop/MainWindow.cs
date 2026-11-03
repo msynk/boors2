@@ -135,11 +135,15 @@ public sealed partial class MainWindow : Window
 
     private async void OnClosed(object sender, WindowEventArgs args)
     {
-        var maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
-        if (!maximized)
-            settings.SaveWindow(AppWindow.Size.Width, AppWindow.Size.Height, false);
-        else
-            settings.SaveWindow(settings.Current.WindowWidth, settings.Current.WindowHeight, true);
+        // A --size session (screenshots) is an override for this run only, like every command-line switch.
+        if (startup.Size is null)
+        {
+            var maximized = AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
+            if (!maximized)
+                settings.SaveWindow(AppWindow.Size.Width, AppWindow.Size.Height, false);
+            else
+                settings.SaveWindow(settings.Current.WindowWidth, settings.Current.WindowHeight, true);
+        }
         await App.ShutdownAsync();
     }
 }

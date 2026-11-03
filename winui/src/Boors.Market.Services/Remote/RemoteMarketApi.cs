@@ -80,6 +80,21 @@ public sealed class RemoteMarketApi(HttpClient http, RemoteMarketApiOptions opti
     public async Task<ShortlistDto> GetShortlistAsync(string? asOf, CancellationToken cancellationToken) =>
         (await GetAsync($"api/v1/Report/GetShortlist{Query(("asOf", asOf))}", Json.ShortlistDto, cancellationToken))!;
 
+    public Task<List<SimulationPresetDto>> GetSimulationPresetsAsync(CancellationToken cancellationToken) =>
+        GetListAsync("api/v1/Simulation/GetPresets", Json.ListSimulationPresetDto, cancellationToken);
+
+    public async Task<SimulationResultDto> RunSimulationAsync(SimulationRunRequestDto request, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync("api/v1/Simulation/Run", request, Json.SimulationRunRequestDto, cancellationToken);
+        return (await ReadAsync(response, Json.SimulationResultDto, cancellationToken))!;
+    }
+
+    public async Task<SimulationTuningDto> TuneSimulationAsync(SimulationTuneRequestDto request, CancellationToken cancellationToken)
+    {
+        using var response = await http.PostAsJsonAsync("api/v1/Simulation/Tune", request, Json.SimulationTuneRequestDto, cancellationToken);
+        return (await ReadAsync(response, Json.SimulationTuningDto, cancellationToken))!;
+    }
+
     public async Task<MarketDataHealthDto> GetHealthAsync(CancellationToken cancellationToken) =>
         (await GetAsync("api/v1/MarketData/GetHealth", Json.MarketDataHealthDto, cancellationToken))!;
 

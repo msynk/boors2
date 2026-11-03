@@ -35,6 +35,11 @@ this file says how to work on them.
   never string interpolation inside the template. The desktop writes CLEF JSON lines to `%LOCALAPPDATA%\Boors\logs`.
 - **Exceptions:** API refusals are `MarketApiException(status, message)`; Boors.Node turns them into RFC 9457
   problem details. View models turn exceptions into a sentence (`PageViewModel.Describe`), never a crash dialog.
+- **Simulations are replays.** A simulation's results are recomputed from its definition and the data every time, so a
+  change to `MarketSimulator` changes the past of every saved simulation: keep it deterministic and point-in-time
+  (decide at a close, fill on a later session), and pin each execution rule with a test in `SimulationTests`.
+  Definitions are user data in `%LOCALAPPDATA%\Boors\simulations` (`SimulationStore`), never in `market.duckdb`;
+  a new parameter needs the same default in `SimulationSettings` and `SimulationSettingsDto` (a test compares them).
 
 ## 4. Desktop (WinUI) rules
 

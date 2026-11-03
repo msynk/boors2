@@ -101,6 +101,16 @@
                         <FontIcon Glyph="&#xE9F9;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="{l:L K='Simulations'}" Tag="simulations">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE99A;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <!-- Simulated trades since each simulation was last opened -->
+                        <InfoBadge Value="{x:Bind ViewModel.SimulationsBadge, Mode=OneWay}" Visibility="{x:Bind vm:Ui.Show(ViewModel.HasSimulationsBadge), Mode=OneWay}"
+                                   AutomationProperties.Name="{x:Bind ViewModel.SimulationsBadgeText, Mode=OneWay}" ToolTipService.ToolTip="{x:Bind ViewModel.SimulationsBadgeText, Mode=OneWay}" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
                 <NavigationViewItem Content="{l:L K='Data health'}" Tag="health">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE95E;" />

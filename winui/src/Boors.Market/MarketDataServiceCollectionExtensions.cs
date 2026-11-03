@@ -54,6 +54,9 @@ public static class MarketDataServiceCollectionExtensions
         services.TryAddTransient<Analytics.MarketWatchService>();
         services.TryAddTransient<Analytics.MarketReports>();
 
+        // One simulator per process: it caches the market panel that every simulation replays over.
+        services.TryAddSingleton<Simulation.MarketSimulator>();
+
         AddSourceClient<TsetmcClient>(services, "tsetmc", o => o.TsetmcRequestsPerSecond);
         AddSourceClient<CodalClient>(services, "codal", o => o.CodalRequestsPerSecond);
         AddSourceClient<TgjuClient>(services, "tgju", o => o.OtherSourcesRequestsPerSecond);

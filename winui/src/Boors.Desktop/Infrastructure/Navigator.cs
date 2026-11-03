@@ -15,6 +15,9 @@ public sealed class Navigator
     public const string Jobs = "jobs";
     public const string Settings = "settings";
     public const string Symbol = "symbol";
+    public const string Simulations = "simulations";
+    public const string Simulation = "simulation";
+    public const string SimulationEditor = "simulation-edit";
 
     public Frame? Frame { get; set; }
 
@@ -27,7 +30,8 @@ public sealed class Navigator
 
     public bool CanGoBack => Frame?.CanGoBack ?? false;
 
-    public void Navigate(string key, object? parameter = null)
+    /// <summary>Shows a page; with <paramref name="replace"/> the current page leaves the history (a finished form).</summary>
+    public void Navigate(string key, object? parameter = null, bool replace = false)
     {
         if (Frame is null)
             return;
@@ -37,6 +41,8 @@ public sealed class Navigator
         CurrentKey = key;
         CurrentParameter = parameter;
         Frame.Navigate(PageType(key), parameter, new SuppressNavigationTransitionInfo());
+        if (replace && Frame.BackStack.Count > 0)
+            Frame.BackStack.RemoveAt(Frame.BackStack.Count - 1);
         Navigated?.Invoke(this, key);
     }
 
@@ -48,7 +54,13 @@ public sealed class Navigator
             return;
         Frame.GoBack(new SuppressNavigationTransitionInfo());
         CurrentKey = KeyOf(Frame.Content?.GetType());
-        CurrentParameter = Frame.Content is SymbolPage symbol ? symbol.InsCode : null;
+        CurrentParameter = Frame.Content switch
+        {
+            SymbolPage symbol => symbol.InsCode,
+            SimulationPage simulation => simulation.SimulationId,
+            SimulationEditorPage editor => editor.SimulationId,
+            _ => null,
+        };
         Navigated?.Invoke(this, CurrentKey);
     }
 
@@ -71,6 +83,9 @@ public sealed class Navigator
         Jobs => typeof(JobsPage),
         Settings => typeof(SettingsPage),
         Symbol => typeof(SymbolPage),
+        Simulations => typeof(SimulationsPage),
+        Simulation => typeof(SimulationPage),
+        SimulationEditor => typeof(SimulationEditorPage),
         _ => typeof(OverviewPage),
     };
 
@@ -83,6 +98,9 @@ public sealed class Navigator
         nameof(JobsPage) => Jobs,
         nameof(SettingsPage) => Settings,
         nameof(SymbolPage) => Symbol,
+        nameof(SimulationsPage) => Simulations,
+        nameof(SimulationPage) => Simulation,
+        nameof(SimulationEditorPage) => SimulationEditor,
         _ => Overview,
     };
 }

@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.SimulationPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:dto="using:Boors.Market.Services.Contracts"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    xmlns:charts="using:Boors.Desktop.Charts"
+    Background="Transparent">
+
+    <Grid Padding="24,12,24,16" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" MinHeight="200" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Name, what it is, actions -->
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel VerticalAlignment="Center" MaxWidth="900">
+                <TextBlock Text="{x:Bind ViewModel.Title, Mode=OneWay}" Style="{StaticResource PageTitleStyle}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{x:Bind ViewModel.Subtitle, Mode=OneWay}" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+            </StackPanel>
+            <ProgressRing Grid.Column="1" IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" HorizontalAlignment="Left" />
+            <Button Grid.Column="2" Click="OnEdit" AutomationProperties.Name="{l:L K='Parameters'}" ToolTipService.ToolTip="{l:L K='Change the parameters'}">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon Glyph="&#xE713;" FontSize="14" />
+                    <TextBlock Text="{l:L K='Parameters'}" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="TrackingButton" Grid.Column="3" Click="OnTracking" />
+            <DropDownButton Grid.Column="4" AutomationProperties.Name="{l:L K='More'}" ToolTipService.ToolTip="{l:L K='More'}">
+                <FontIcon Glyph="&#xE712;" FontSize="14" />
+                <DropDownButton.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                        <MenuFlyoutItem Text="{l:L K='Replay now'}" Click="OnReplay">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="{l:L K='Duplicate'}" Click="OnDuplicate">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem Text="{l:L K='Export the trades (CSV)'}" Click="OnExportTrades">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEDE1;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="{l:L K='Export the daily values (CSV)'}" Click="OnExportEquity">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEDE1;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutItem Text="{l:L K='Export the holdings (CSV)'}" Click="OnExportHoldings">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEDE1;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                        <MenuFlyoutSeparator />
+                        <MenuFlyoutItem Text="{l:L K='Delete'}" Click="OnDelete">
+                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon>
+                        </MenuFlyoutItem>
+                    </MenuFlyout>
+                </DropDownButton.Flyout>
+            </DropDownButton>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Spacing="6">
+            <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not replay the simulation'}"
+                     IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+            <InfoBar Severity="Informational" IsClosable="True" IsOpen="{x:Bind l:Bools.HasText(ViewModel.Notice), Mode=OneWay}" Message="{x:Bind ViewModel.Notice, Mode=OneWay}" />
+        </StackPanel>
+
+        <ItemsRepeater Grid.Row="2" ItemsSource="{x:Bind ViewModel.Kpis, Mode=OneWay}">
+            <ItemsRepeater.Layout>
+                <UniformGridLayout MinItemWidth="150" MinItemHeight="104" MinColumnSpacing="10" MinRowSpacing="10" ItemsStretch="Fill" MaximumRowsOrColumns="8" />
+            </ItemsRepeater.Layout>
+            <ItemsRepeater.ItemTemplate>
+                <DataTemplate x:DataType="vm:KpiItem">
+                    <controls:KpiTile Item="{x:Bind}" />
+                </DataTemplate>
+            </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+
+        <SelectorBar x:Name="Tabs" Grid.Row="3" SelectionChanged="OnTabChanged">
+            <SelectorBarItem x:Name="OverviewTab" Tag="overview" IsSelected="True" />
+            <SelectorBarItem x:Name="HoldingsTab" Tag="holdings" />
+            <SelectorBarItem x:Name="OrdersTab" Tag="orders" />
+            <SelectorBarItem x:Name="TradesTab" Tag="trades" />
+            <SelectorBarItem x:Name="JournalTab" Tag="journal" />
+            <SelectorBarItem x:Name="PerformanceTab" Tag="performance" />
+            <SelectorBarItem x:Name="StrategyTab" Tag="strategy" />
+        </SelectorBar>
+
+        <Grid Grid.Row="4">
+            <!-- Overview: the curve against the benchmarks, the drawdown, the next session, the latest events -->
+            <ScrollViewer x:Name="OverviewPanel" VerticalScrollBarVisibility="Auto">
+                <Grid ColumnSpacing="16" RowSpacing="16" Padding="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
+                        <ColumnDefinition Width="2*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource CardStyle}">
+                        <Grid RowSpacing="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="320" />
+                            </Grid.RowDefinitions>
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{l:L K='Value, TEDPIX and the average share, indexed to 100 at the start'}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                                <controls:Segmented x:Name="DenominationSwitch" Grid.Column="1" Compact="True" VerticalAlignment="Top" />
+                            </Grid>
+                            <charts:ComparisonChart x:Name="EquityChart" Grid.Row="1" />
+                        </Grid>
+                    </Border>
+                    <Border Grid.Row="1" Style="{StaticResource CardStyle}">
+                        <Grid RowSpacing="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="170" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{l:L K='Fall from the highest value so far (%)'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <charts:ComparisonChart x:Name="DrawdownChart" Grid.Row="1" ShowLegend="False" />
+                        </Grid>
+                    </Border>
+                    <Border Grid.Column="1" Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{l:L K='Next session'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="{x:Bind ViewModel.NextText, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Planned, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Spacing="4" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="dto:SimulationOrderPlanDto">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="52" />
+                                                <ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind vm:SimulationText.Side(Side)}" FontWeight="SemiBold" Foreground="{x:Bind vm:SimulationText.SideBrush(Side)}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Symbol}" FontWeight="SemiBold" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind vm:SimulationText.Reason(Reason)}" Style="{StaticResource MutedTextStyle}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind vm:SimulationText.Million(Value)}" Style="{StaticResource NumberTextStyle}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="1" Grid.Row="1" Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{l:L K='Latest events'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <ItemsRepeater ItemsSource="{x:Bind ViewModel.Recent, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <StackLayout Spacing="6" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:JournalLine">
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{x:Bind vm:SimulationText.Day(Date)}" Style="{StaticResource MutedTextStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Text}" TextWrapping="WrapWholeWords" Foreground="{x:Bind vm:SimulationText.ToneBrush(Tone)}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </ScrollViewer>
+
+            <Grid x:Name="HoldingsPanel" RowSpacing="6" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="HoldingsHint" Style="{StaticResource MutedTextStyle}" />
+                <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                    <controls:DataTable x:Name="HoldingsTable" FrozenColumns="1" Items="{x:Bind ViewModel.Holdings, Mode=OneWay}" />
+                </Border>
+            </Grid>
+
+            <!-- Orders: the ticket and the strategy's suggestions in manual mode; the next session's orders in automatic mode -->
+            <Grid x:Name="OrdersPanel" ColumnSpacing="12" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="TicketColumn" Width="360" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ScrollViewer x:Name="TicketPanel" VerticalScrollBarVisibility="Auto">
+                    <Border Style="{StaticResource CardStyle}">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="{l:L K='Place an order'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <AutoSuggestBox x:Name="SymbolBox" PlaceholderText="{l:L K='Symbol'}" QueryIcon="Find" UpdateTextOnSelect="False"
+                                            ItemsSource="{x:Bind ViewModel.TicketMatches, Mode=OneWay}"
+                                            TextChanged="OnSymbolTextChanged" SuggestionChosen="OnSymbolChosen" QuerySubmitted="OnSymbolSubmitted"
+                                            AutomationProperties.Name="{l:L K='Symbol'}">
+                                <AutoSuggestBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dto:InstrumentSearchResultDto">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{x:Bind Symbol}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind Name}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </AutoSuggestBox.ItemTemplate>
+                            </AutoSuggestBox>
+                            <TextBlock x:Name="TicketInstrumentText" Style="{StaticResource MutedTextStyle}" />
+                            <controls:Segmented x:Name="SideSwitch" />
+                            <controls:Segmented x:Name="UnitSwitch" Compact="True" />
+                            <NumberBox x:Name="AmountBox" Value="{x:Bind ViewModel.TicketAmount, Mode=TwoWay}" Minimum="0" SpinButtonPlacementMode="Compact" SmallChange="10" LargeChange="100" />
+                            <NumberBox Header="{l:L K='Limit price in rials (empty = at the session price)'}" Value="{x:Bind ViewModel.TicketLimit, Mode=TwoWay}" Minimum="0" />
+                            <NumberBox Header="{l:L K='Good for (sessions)'}" Value="{x:Bind ViewModel.TicketGoodFor, Mode=TwoWay}" Minimum="1" Maximum="60" SpinButtonPlacementMode="Compact" />
+                            <Button Style="{StaticResource AccentButtonStyle}" Content="{l:L K='Place the order'}" Click="OnPlaceOrder" HorizontalAlignment="Stretch" />
+                            <TextBlock Text="{x:Bind ViewModel.TicketMessage, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords"
+                                       Visibility="{x:Bind vm:Ui.ShowText(ViewModel.TicketMessage), Mode=OneWay}" />
+                            <TextBlock x:Name="TicketNote" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+                <Grid Grid.Column="1" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock x:Name="FirstOrdersTitle" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                    <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                        <controls:DataTable x:Name="FirstOrdersTable" />
+                    </Border>
+                    <TextBlock x:Name="SecondOrdersTitle" Grid.Row="2" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                    <Border x:Name="SecondOrdersCard" Grid.Row="3" Style="{StaticResource CardStyle}" Padding="0">
+                        <controls:DataTable x:Name="SecondOrdersTable" />
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <Border x:Name="TradesPanel" Style="{StaticResource CardStyle}" Padding="0" Visibility="Collapsed">
+                <controls:DataTable x:Name="TradesTable" FrozenColumns="1" Items="{x:Bind ViewModel.Trades, Mode=OneWay}" />
+            </Border>
+
+            <Border x:Name="JournalPanel" Style="{StaticResource CardStyle}" Padding="0" Visibility="Collapsed">
+                <controls:DataTable x:Name="JournalTable" Items="{x:Bind ViewModel.Journal, Mode=OneWay}" />
+            </Border>
+
+            <Grid x:Name="PerformancePanel" ColumnSpacing="12" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="560" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource CardStyle}" Padding="0">
+                    <controls:DataTable x:Name="StatsTable" Items="{x:Bind ViewModel.Stats, Mode=OneWay}" />
+                </Border>
+                <Grid Grid.Column="1" RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{l:L K='Return by Jalali month (the first month from the starting capital)'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                        <controls:DataTable x:Name="MonthsTable" FrozenColumns="1" Items="{x:Bind ViewModel.Months, Mode=OneWay}" />
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <Grid x:Name="StrategyPanel" ColumnSpacing="12" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="700" />
+                </Grid.ColumnDefinitions>
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
+                               Text="{l:L K='How the last ranking weighed each factor. Shares are ranked by the weighted average of their percentile on each factor. In adaptive mode the weight in use follows each factor&#x2019;s rank correlation with the next 20 sessions&#x2019; returns (only months already over count); a factor few shares have data for is left out.'}" />
+                    <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="0">
+                        <controls:DataTable x:Name="FactorsTable" Items="{x:Bind ViewModel.Factors, Mode=OneWay}" />
+                    </Border>
+                </Grid>
+                <Border Grid.Column="1" Style="{StaticResource CardStyle}" Padding="0">
+                    <controls:DataTable x:Name="ParametersTable" Items="{x:Bind ViewModel.Parameters, Mode=OneWay}" />
+                </Border>
+            </Grid>
+        </Grid>
+
+        <TextBlock Grid.Row="5" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
+                   Text="{l:L K='Paper trading for research and practice, not buy or sell advice. Fills assume the next session&#x2019;s price for at most a share of its value traded; real queues, partial fills and your broker can differ.'}" />
+    </Grid>
+</Page>

@@ -5,7 +5,7 @@ built with **WinUI 3 (Windows App SDK 2.5) and .NET 10**. It reuses the market-d
 .NET + Blazor implementation (`boilerplate/src/Market`, copied here) and adds:
 
 - **Boors.Desktop** — the WinUI 3 workstation: overview, market watch (دیده‌بان), symbol workspace, screens, reports,
-  data health and settings, Persian (RTL, Jalali, Persian digits) by default and English, dark/light, with an in-process
+  simulations (paper portfolios, automatic or manual, followed with the market every day), data health and settings, Persian (RTL, Jalali, Persian digits) by default and English, dark/light, with an in-process
   DuckDB store (the offline replica) or a remote node.
 - **Boors.Node** — a lean ASP.NET Core minimal-API node: the boilerplate's market API with the same routes and JSON,
   data health, the collection job queue with the Iran-time schedule, and raw-cache sync between nodes.
@@ -16,11 +16,11 @@ Everything under `winui/` is self-contained: no project, import, props file or r
 
 | Project | What it is |
 |---|---|
-| `src/Boors.Market` | Market-data library (copied from the boilerplate): TSETMC/Codal/tgju/fipiran clients with resilience, write-once raw cache, parsers, dated rules (`rules/rules.yaml`, embedded), day-status classifier, DuckDB `MarketStore`, collectors, analytics, TSETMC filter (Jint), data health |
+| `src/Boors.Market` | Market-data library (copied from the boilerplate): TSETMC/Codal/tgju/fipiran clients with resilience, write-once raw cache, parsers, dated rules (`rules/rules.yaml`, embedded), day-status classifier, DuckDB `MarketStore`, collectors, analytics, strategy simulations (`Simulation/`), TSETMC filter (Jint), data health |
 | `src/Boors.Market.Cli` | `boors` CLI (copied): probe, collect, rebuild, health, query, market views, cache bundles |
-| `src/Boors.Market.Tests` | 125 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports) |
+| `src/Boors.Market.Tests` | 140 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports, simulations) |
 | `src/Boors.Market.Services` | Application layer shared by node and desktop: API DTOs + source-generated JSON, the `IMarketApi` contract with **local** (in-process DuckDB) and **remote** (HTTP) implementations, the single-writer **job queue** + worker, the **Asia/Tehran scheduler**, **node sync** (bundle export/pull) |
-| `src/Boors.Market.Services.Tests` | 27 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull |
+| `src/Boors.Market.Services.Tests` | 30 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull, simulation contract defaults and validation |
 | `src/Boors.Node` | Minimal-API host of `IMarketApi` (+ GetJobs, ExportBundle, Pull), problem details, response compression, health checks, optional operator token |
 | `src/Boors.Desktop` | WinUI 3 app (MVVM, DI, x:Bind), unpackaged + self-contained Windows App SDK, x64 |
 | `rules/rules.yaml` | Dated market rules (embedded into Boors.Market) |
@@ -51,12 +51,14 @@ the .NET SDK).
 dotnet build winui/Boors.WinUI.slnx -c Release
 
 # Tests (offline, Microsoft.Testing.Platform)
-cd winui/src/Boors.Market.Tests; dotnet test -c Release            # 125 tests
-cd winui/src/Boors.Market.Services.Tests; dotnet test -c Release   # 27 tests
+cd winui/src/Boors.Market.Tests; dotnet test -c Release            # 140 tests
+cd winui/src/Boors.Market.Services.Tests; dotnet test -c Release   # 30 tests
 
 # CLI against a data folder (copy, never move, a .boors-data folder into winui/.boors-data — it is git-ignored)
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data health
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data market overview
+dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data simulate --preset adaptive --start 2025-06-01
+dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data simulate tune --years 3 --objective sharpe
 
 # Node (http://localhost:5080); BOORS_DATA / BOORS_NODE / BOORS_OPERATOR_TOKEN override appsettings.json
 $env:BOORS_DATA = "winui/.boors-data"; dotnet run --project winui/src/Boors.Node -c Release
@@ -109,6 +111,47 @@ DuckDB allows one process per store file: close the desktop before pointing the 
   never part of the ranking) and tiles for the first 20 rows, the median share and TEDPIX since then, so "did the
   leaders keep leading?" is one glance; the sector report adds the median member since then. Seasonality offers all
   years, the last 5 or 10, or the months from a custom start.
+- **Simulations** (`--page simulations`, `simulation:<id>` or `simulation-edit[:<id>]`; `MarketSimulator` in Boors.Market):
+  paper portfolios replayed session by session from a start date to the latest session and followed every day — the
+  app replays every simulation shortly after it starts and whenever a job brings new prices, so a simulation started in
+  the past is a backtest that then keeps running live. Results are a pure function of the definition (parameters, the
+  user's orders) and the data. **Automatic** mode: the strategy ranks the buyable shares (primary listings with a real
+  price that day, traded on half of the last 20 sessions, above the liquidity floor) by the weighted average of their
+  percentiles on 15 factors — technical (12-month momentum without the last month, trend against the 200-session
+  average, closeness to the 52-week high, 55-session breakout, short-term reversal, RSI pullback in an uptrend, MACD
+  histogram, low volatility), fundamental (earnings yield, earnings yield against the sector median, 60-session EPS
+  revision — from the EPS of end-of-day market-watch snapshots, so they switch on as snapshots accumulate; a factor
+  fewer than 30% of the shares have a value for gives its weight to the others), money flow (individual net inflow ÷
+  value over 20 sessions, 5-session buyer power) and quality (up months, return per risk). **Adaptive** learns the
+  weights walk-forward: each ranking blends the chosen weights with each factor's mean rank correlation with the next 20
+  sessions' returns over the last two years, counting only formations whose 20 sessions are over (on the 2025–2026
+  data it leans to the 52-week high, return per risk, buyer power and trend, and away from short-term reversal and RSI
+  pullbacks: in Tehran short-term moves have continued rather than reverted). Free places are filled from the top of the ranking
+  down (never below the hold limit) and holdings kept while in the top 20% (a buffer that more than halved the balanced
+  preset's turnover — a round trip costs ≈1.4%),
+  sized by inverse volatility (or equally, or by conviction) with caps per position and per sector; exposure falls
+  while TEDPIX is under its 100-session average (regime filter) and towards a volatility target, and stop loss, trailing
+  stop, take profit and a holding limit are checked every session. Six presets (balanced, adaptive, trend, value, flow,
+  swing) fill the parameters; every one stays adjustable. **Manual** mode: you place orders (an amount, shares or
+  everything; an optional limit; good for N sessions; cancel while waiting) and the strategy's choices under the same
+  parameters are shown as suggestions that fill the order ticket. Execution: decided at a close and filled at the next
+  session's open or close (its VWAP on the main markets) with slippage, never in an all-day buy queue (buys) or sell
+  queue (sells) and not while halted (the order waits), at most 10% of the session's value per order, whole shares,
+  costs per side and the 0.5% sale tax from `rules.yaml`, sale proceeds usable after T+2 (or at once with broker buying
+  power), idle cash at a fixed-income yield (30% a year by default, also the Sharpe hurdle — beating zero in rials
+  means little at this inflation), capital increases and dividends reinvested in the position. Parameters can change
+  while a simulation runs: a revision applies from the latest session on and never rewrites the past (or the simulation
+  is replayed from its start). The list shows value, return against TEDPIX and in dollars, deepest fall, Sharpe and new
+  trades, and compares up to six equity curves indexed to 100 at each start; a simulation shows tiles, its value against
+  TEDPIX and the average share (in rials or dollars), its drawdown, the next session's orders, holdings, orders, trades,
+  a worded journal (every ranking, stop, regime change and blocked order), 33 statistics, returns by Jalali month, the
+  factor weights in use with what was learned, and its parameters with their history; trades, holdings and daily values
+  export to CSV. *Find the best parameters* runs 54 sets (positions, ranking interval, trailing stop, regime filter) over
+  1–10 past years, ranked on the first two thirds and checked on the last third. On the 2026-11-02 data a replay from
+  2025-06-01 takes ≈1 s cold (loading the panel of every equity session) and 0.1 s after; the 54-set tuning over three
+  years ≈2 s. Definitions are JSON files in `%LOCALAPPDATA%\Boors\simulations` (user data, kept out of the rebuildable
+  store); the menu badge counts simulated trades since each simulation was last opened. Simulations are research, not
+  advice, and run over today's instruments (delisted companies are missing).
 - **Operations:** *Data health* shows dataset freshness, the last runs and source reachability, and *Sync from node*
   pulls another node's raw-cache bundle, imports it and replays it into the store.
 - **Data collection** (the job monitor; `--page jobs`): the running job live (progress line, elapsed time, HTTP
@@ -135,10 +178,12 @@ DuckDB allows one process per store file: close the desktop before pointing the 
   run jobs, sync), Ctrl+F symbol search in the title bar, F5 reload, Enter in the filter box applies it.
 - **Command line** (session overrides, not saved): `--lang fa|en`, `--theme dark|light|system`,
   `--digits persian|latin`, `--preset iranian|cb`, `--density pro|lite`, `--mode local|remote`, `--node-url <url>`,
-  `--page overview|watch|screens|reports|reports:<report>[:<base date>[:<start>]]|health|jobs|settings|symbol:<insCode>`, `--data <dir>`, `--size WxH`, `--scroll Y`,
+  `--page overview|watch|screens|reports|reports:<report>[:<base date>[:<start>]]|simulations|simulation:<id>|simulation-edit[:<id>]|health|jobs|settings|symbol:<insCode>`,
+  `--data <dir>`, `--simulations <dir>` (or `BOORS_SIMULATIONS`), `--download on|off`, `--size WxH`, `--scroll Y`,
   `--exit-after-ms N` (closes N ms after the first page shows data; for startup measurements).
 - **Files:** settings `%LOCALAPPDATA%\Boors\settings.json`; structured logs (CLEF JSON lines)
-  `%LOCALAPPDATA%\Boors\logs\desktop-yyyyMMdd.jsonl`; startup timings `...\logs\startup.txt`.
+  `%LOCALAPPDATA%\Boors\logs\desktop-yyyyMMdd.jsonl`; startup timings `...\logs\startup.txt`; simulations
+  `%LOCALAPPDATA%\Boors\simulations\{id}.json` (definition, orders, last summary).
 
 ### Publishing the desktop
 
@@ -166,6 +211,7 @@ dotnet publish winui/src/Boors.Desktop -c Release -o publish/desktop-sc -p:SelfC
 | `GET api/v1/Market/GetIndexHistory/{insCode}?from=` · `GetMacroHistory/{series}?from=` · `Search?text=&take=` | |
 | `GET api/v1/Report/GetPerformance/{kind}?period=&take=&minValue=&asOf=&from=` | kind `TopPerformers`, `SteadyCompounders`, `QualityOnDip`; period `1m`, `3m`, `6m`, `ytd`, `1y` (default), `3y`, `5y`, or `custom` with `from`; `asOf` = base date (default the latest session); take 1–500 (default 50); `minValue` in rials per session; unknown kind or period, `custom` without `from`, or `from` ≥ `asOf` is a 400 problem |
 | `GET api/v1/Report/GetShortlist?asOf=` | the three horizon lists on a base date (about 2 s on the 2026-10-27 store) |
+| `GET api/v1/Simulation/GetPresets` · `POST api/v1/Simulation/Run` · `POST api/v1/Simulation/Tune` | the parameter presets; `{spec, detail}` → the replay of a definition up to the latest session (without `detail`, no trades or journal); `{spec, years, objective}` → the 54-set tuning (`Return`, `Sharpe`, `Calmar`); no capital, no parameters or an unknown mode, side, sizing, fill, factor or objective is a 400 problem |
 | `GET api/v1/Report/GetSectorReturns?period=&minValue=&asOf=&from=` · `GetSignalTrackRecord?years=&asOf=&from=` · `GetSeasonality?asOf=&from=` | years 1–15 (default 5); `from` = whole months back from `asOf` (signals) or the first Jalali month shown (seasonality) |
 | `POST api/v1/Market/GetMarketWatch` | `{date, filter, classes, tradedOnly}`; a filter syntax error is a 400 problem |
 | `GET api/v1/Instrument/{GetMetrics,GetBars,GetFlows,GetEvents,GetShareholders,GetLetters,GetMessages}/{insCode}` | 404 problem for an unknown instrument |

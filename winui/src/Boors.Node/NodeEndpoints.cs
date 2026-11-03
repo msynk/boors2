@@ -43,6 +43,11 @@ public static class NodeEndpoints
         report.MapGet("GetSeasonality", (string? asOf, string? from, IMarketApi api, CancellationToken ct) => api.GetSeasonalityAsync(asOf, from, ct));
         report.MapGet("GetShortlist", (string? asOf, IMarketApi api, CancellationToken ct) => api.GetShortlistAsync(asOf, ct));
 
+        var simulation = app.MapGroup("api/v1/Simulation").WithTags("Simulation");
+        simulation.MapGet("GetPresets", (IMarketApi api, CancellationToken ct) => api.GetSimulationPresetsAsync(ct));
+        simulation.MapPost("Run", (SimulationRunRequestDto request, IMarketApi api, CancellationToken ct) => api.RunSimulationAsync(request, ct));
+        simulation.MapPost("Tune", (SimulationTuneRequestDto request, IMarketApi api, CancellationToken ct) => api.TuneSimulationAsync(request, ct));
+
         var marketData = app.MapGroup("api/v1/MarketData").WithTags("MarketData");
         marketData.MapGet("GetHealth", (IMarketApi api, CancellationToken ct) => api.GetHealthAsync(ct));
         marketData.MapGet("GetJobs", (IMarketApi api, CancellationToken ct) => api.GetJobsAsync(ct));

@@ -41,6 +41,15 @@ public sealed class SettingsService
 
     public bool DataRootOverridden => Environment.GetEnvironmentVariable("BOORS_DATA") is { Length: > 0 } || overrides.ContainsKey("data");
 
+    /// <summary>
+    /// Where simulations are saved. They are the user's own work, not market data, so they stay out of the data folder
+    /// (whose store is rebuilt from the cache); BOORS_SIMULATIONS or --simulations moves them for one session.
+    /// </summary>
+    public string SimulationsFolder =>
+        Environment.GetEnvironmentVariable("BOORS_SIMULATIONS") is { Length: > 0 } env ? Path.GetFullPath(env)
+        : overrides.TryGetValue("simulations", out var cli) ? Path.GetFullPath(cli)
+        : Path.Combine(AppFolder, "simulations");
+
     public string EffectiveNode =>
         Environment.GetEnvironmentVariable("BOORS_NODE") is { Length: > 0 } env ? env
         : string.IsNullOrWhiteSpace(Current.NodeName) ? Environment.MachineName
@@ -145,6 +154,8 @@ public sealed class SettingsService
             settings.Mode = mode.StartsWith("r", StringComparison.OrdinalIgnoreCase) ? "Remote" : "Local";
         if (Get("node-url") is { } url)
             settings.NodeUrl = url;
+        if (Get("download") is { } download)
+            settings.AutoDownload = download.Equals("on", StringComparison.OrdinalIgnoreCase) || download.Equals("true", StringComparison.OrdinalIgnoreCase);
         return settings;
     }
 }

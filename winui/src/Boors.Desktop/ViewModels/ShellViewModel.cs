@@ -30,7 +30,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private int jobRefreshQueued;
     private DateTimeOffset lastFinishedSeen = DateTimeOffset.MinValue;
 
-    public ShellViewModel(IMarketApi api, Navigator navigator, SettingsService settings, MarketJobQueue queue, UiDispatcher dispatcher, ILogger<ShellViewModel> logger)
+    public ShellViewModel(IMarketApi api, Navigator navigator, SettingsService settings, MarketJobQueue queue, UiDispatcher dispatcher, SimulationTracker simulations, ILogger<ShellViewModel> logger)
     {
         this.api = api;
         this.navigator = navigator;
@@ -43,6 +43,7 @@ public sealed partial class ShellViewModel : ObservableObject
             if (Interlocked.Exchange(ref jobRefreshQueued, 1) == 0)
                 dispatcher.Post(UpdateJobIndicator);
         };
+        simulations.Changed += (_, _) => SimulationsBadge = simulations.NewActivity;
     }
 
     [ObservableProperty]
@@ -66,6 +67,20 @@ public sealed partial class ShellViewModel : ObservableObject
     public string JobsBadgeText => Loc.F("{0} jobs with failures since you last looked", Fmt.Number(JobsBadge));
 
     public void ClearJobsBadge() => JobsBadge = 0;
+
+    /// <summary>Simulated trades made since each simulation was last opened.</summary>
+    [ObservableProperty]
+    public partial int SimulationsBadge { get; set; }
+
+    public bool HasSimulationsBadge => SimulationsBadge > 0;
+
+    public string SimulationsBadgeText => Loc.F("{0} new simulated trades since you last looked", Fmt.Number(SimulationsBadge));
+
+    partial void OnSimulationsBadgeChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasSimulationsBadge));
+        OnPropertyChanged(nameof(SimulationsBadgeText));
+    }
 
     partial void OnJobsBadgeChanged(int value)
     {
@@ -178,6 +193,12 @@ public sealed partial class ShellViewModel : ObservableObject
         yield return Go(Loc.T("Market watch"), Navigator.Watch, "");
         yield return Go(Loc.T("Screens"), Navigator.Screens, "");
         yield return Go(Loc.T("Reports"), Navigator.Reports, "");
+        yield return Go(Loc.T("Simulations"), Navigator.Simulations, "");
+        yield return new(Loc.T("New simulation"), Loc.T("Simulations"), "", () =>
+        {
+            navigator.Navigate(Navigator.SimulationEditor);
+            return Task.CompletedTask;
+        });
         yield return Go(Loc.T("Data health"), Navigator.Health, "");
         yield return Go(Loc.T("Data collection"), Navigator.Jobs, "");
         yield return Go(Loc.T("Settings"), Navigator.Settings, "");

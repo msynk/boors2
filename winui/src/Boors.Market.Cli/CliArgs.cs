@@ -3,7 +3,7 @@ namespace Boors.Market.Cli;
 /// <summary>Minimal argument parser: positional words, <c>--name value</c> options and <c>--flag</c> switches.</summary>
 public sealed class CliArgs
 {
-    private static readonly HashSet<string> Switches = ["details", "verbose", "offline", "cache", "help", "force", "history", "update", "with-messages", "traded"];
+    private static readonly HashSet<string> Switches = ["details", "verbose", "offline", "cache", "help", "force", "history", "update", "with-messages", "traded", "adaptive", "no-regime"];
 
     private readonly Dictionary<string, string?> options = new(StringComparer.OrdinalIgnoreCase);
 

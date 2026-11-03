@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Boors.Desktop.Views.SimulationEditorPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:l="using:Boors.Desktop.Infrastructure"
+    xmlns:vm="using:Boors.Desktop.ViewModels"
+    xmlns:dto="using:Boors.Market.Services.Contracts"
+    xmlns:controls="using:Boors.Desktop.Controls"
+    Background="Transparent">
+
+    <Page.Resources>
+        <Style x:Key="FieldStyle" TargetType="NumberBox">
+            <Setter Property="Width" Value="250" />
+            <Setter Property="Margin" Value="0,0,12,12" />
+            <Setter Property="SpinButtonPlacementMode" Value="Compact" />
+            <Setter Property="ValidationMode" Value="InvalidInputOverwritten" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Padding="24,12,24,12" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <TextBlock x:Name="PageTitle" Style="{StaticResource PageTitleStyle}" VerticalAlignment="Center" />
+            <ProgressRing IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" Width="18" Height="18" />
+        </StackPanel>
+
+        <ScrollViewer x:Name="Scroller" Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16" MaxWidth="1180" HorizontalAlignment="Left" Padding="0,0,16,8">
+                <InfoBar Severity="Error" IsClosable="True" IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
+
+                <!-- What it is -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='The simulation'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBox Header="{l:L K='Name'}" Text="{x:Bind ViewModel.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" MaxWidth="460" HorizontalAlignment="Left" MinWidth="460" />
+                        <ComboBox x:Name="ModeBox" Header="{l:L K='Who decides'}" MinWidth="460" SelectionChanged="OnMode" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270">
+                            <NumberBox x:Name="CapitalBox" Header="{l:L K='Starting capital (million toman)'}" Value="{x:Bind ViewModel.CapitalMillion, Mode=TwoWay}" Minimum="1" SmallChange="100" LargeChange="1000" Style="{StaticResource FieldStyle}" />
+                            <CalendarDatePicker x:Name="StartPicker" Header="{l:L K='Start'}" Width="250" DateChanged="OnStartChanged" Margin="0,0,12,12" />
+                        </VariableSizedWrapGrid>
+                        <TextBlock x:Name="StartNote" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" />
+                        <ComboBox x:Name="ApplyBox" Header="{l:L K='Apply the new parameters'}" MinWidth="460" SelectionChanged="OnApply" />
+                        <TextBox Header="{l:L K='Notes'}" Text="{x:Bind ViewModel.Notes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64" MaxWidth="700" HorizontalAlignment="Left" MinWidth="460" />
+                    </StackPanel>
+                </Border>
+
+                <!-- How shares are ranked -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Strategy: how shares are ranked'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="ManualStrategyNote" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
+                                   Text="{l:L K='In manual mode these parameters only shape the suggestions: you decide what to trade.'}" />
+                        <ComboBox x:Name="PresetBox" Header="{l:L K='Start from'}" MinWidth="460" SelectionChanged="OnPreset" />
+                        <TextBlock Text="{x:Bind ViewModel.PresetDescription, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left" />
+                        <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left"
+                                   Text="{l:L K='Each share gets its percentile among the buyable shares on every factor with a weight; the score is their weighted average, and the best-scored shares are bought. 0 leaves a factor out.'}" />
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Weights}">
+                            <ItemsRepeater.Layout>
+                                <UniformGridLayout MinItemWidth="360" MinColumnSpacing="24" MinRowSpacing="2" ItemsStretch="Fill" MaximumRowsOrColumns="3" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FactorWeightItem">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="32" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Title}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{x:Bind FamilyTitle}" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                        </StackPanel>
+                                        <Slider Grid.Column="1" Minimum="0" Maximum="5" StepFrequency="0.5" SmallChange="0.5" Value="{x:Bind Weight, Mode=TwoWay}"
+                                                VerticalAlignment="Center" AutomationProperties.Name="{x:Bind Title}" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind vm:SimulationText.WeightText(Weight), Mode=OneWay}" VerticalAlignment="Center" Style="{StaticResource NumberTextStyle}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                        <ToggleSwitch Header="{l:L K='Learn the weights from what has been working (adaptive)'}" IsOn="{x:Bind ViewModel.Adaptive, Mode=TwoWay}"
+                                      OnContent="{l:L K='On'}" OffContent="{l:L K='Off'}" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270" Visibility="{x:Bind ViewModel.Adaptive, Mode=OneWay}">
+                            <NumberBox Header="{l:L K='Learn from the last (years)'}" Value="{x:Bind ViewModel.AdaptiveYears, Mode=TwoWay}" Minimum="0.5" Maximum="10" SmallChange="0.5" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Keep of the chosen weights (%)'}" Value="{x:Bind ViewModel.AdaptiveKeepPct, Mode=TwoWay}" Minimum="0" Maximum="100" SmallChange="10" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Portfolio and ranking'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270">
+                            <NumberBox Header="{l:L K='Positions'}" Value="{x:Bind ViewModel.Positions, Mode=TwoWay}" Minimum="1" Maximum="50" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Rank every (sessions)'}" Value="{x:Bind ViewModel.RebalanceSessions, Mode=TwoWay}" Minimum="1" Maximum="240" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Keep while in the top (%)'}" Value="{x:Bind ViewModel.HoldPct, Mode=TwoWay}" Minimum="0" Maximum="100" SmallChange="5" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Hold at least (sessions)'}" Value="{x:Bind ViewModel.MinHoldSessions, Mode=TwoWay}" Minimum="0" Maximum="240" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Resize when off target by (%)'}" Value="{x:Bind ViewModel.BandPct, Mode=TwoWay}" Minimum="0" Maximum="100" SmallChange="5" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Largest position (%)'}" Value="{x:Bind ViewModel.MaxWeightPct, Mode=TwoWay}" Minimum="1" Maximum="100" SmallChange="5" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Most positions per sector'}" Value="{x:Bind ViewModel.PerSector, Mode=TwoWay}" Minimum="0" Maximum="50" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Cash kept aside (%)'}" Value="{x:Bind ViewModel.CashReservePct, Mode=TwoWay}" Minimum="0" Maximum="90" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                        <ComboBox x:Name="SizingBox" Header="{l:L K='Split the money'}" MinWidth="460" SelectionChanged="OnSizing" />
+                        <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left"
+                                   Text="{l:L K='Free places are filled from the top of the ranking down (passing over full sectors and shares locked in a buy queue), and a holding is kept while it stays in the top part: buying from the top but holding to that limit saves round trips, which cost about 1.4% each.'}" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Risk'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270">
+                            <NumberBox Header="{l:L K='Stop loss (%, 0 = off)'}" Value="{x:Bind ViewModel.StopLossPct, Mode=TwoWay}" Minimum="0" Maximum="90" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Trailing stop (%, 0 = off)'}" Value="{x:Bind ViewModel.TrailingPct, Mode=TwoWay}" Minimum="0" Maximum="90" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Take profit (%, 0 = off)'}" Value="{x:Bind ViewModel.TakeProfitPct, Mode=TwoWay}" Minimum="0" Maximum="1000" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Sell after (sessions, 0 = off)'}" Value="{x:Bind ViewModel.MaxHoldSessions, Mode=TwoWay}" Minimum="0" Maximum="2400" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Wait before buying back (sessions)'}" Value="{x:Bind ViewModel.CooldownSessions, Mode=TwoWay}" Minimum="0" Maximum="240" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Volatility target (%/year, 0 = off)'}" Value="{x:Bind ViewModel.TargetVolatilityPct, Mode=TwoWay}" Minimum="0" Maximum="200" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                        <ToggleSwitch Header="{l:L K='Invest less while TEDPIX is below its average (regime filter)'}" IsOn="{x:Bind ViewModel.RegimeFilter, Mode=TwoWay}"
+                                      OnContent="{l:L K='On'}" OffContent="{l:L K='Off'}" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270" Visibility="{x:Bind ViewModel.RegimeFilter, Mode=OneWay}">
+                            <NumberBox Header="{l:L K='Average of (sessions)'}" Value="{x:Bind ViewModel.RegimeSessions, Mode=TwoWay}" Minimum="2" Maximum="500" SmallChange="10" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Invest when below (%)'}" Value="{x:Bind ViewModel.DefensivePct, Mode=TwoWay}" Minimum="0" Maximum="100" SmallChange="10" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Universe'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270">
+                            <NumberBox Header="{l:L K='Least value per session (billion toman)'}" Value="{x:Bind ViewModel.MinValueBillion, Mode=TwoWay}" Minimum="0" SmallChange="1" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Least history (traded sessions)'}" Value="{x:Bind ViewModel.MinHistorySessions, Mode=TwoWay}" Minimum="0" Maximum="2400" SmallChange="20" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                        <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left"
+                                   Text="{l:L K='Primary listings of shares on TSE and IFB. Value per session is the average of the last 20 sessions; a share also needs a real price that day and trades on at least half of the last 20 sessions.'}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <AutoSuggestBox x:Name="ExcludeBox" Width="300" PlaceholderText="{l:L K='Never buy… (symbol)'}" QueryIcon="Add" UpdateTextOnSelect="False"
+                                            TextChanged="OnExcludeTextChanged" SuggestionChosen="OnExcludeChosen" QuerySubmitted="OnExcludeSubmitted"
+                                            AutomationProperties.Name="{l:L K='Never buy… (symbol)'}">
+                                <AutoSuggestBox.ItemTemplate>
+                                    <DataTemplate x:DataType="dto:InstrumentSearchResultDto">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{x:Bind Symbol}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{x:Bind Name}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </AutoSuggestBox.ItemTemplate>
+                            </AutoSuggestBox>
+                        </StackPanel>
+                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.Excluded}">
+                            <ItemsRepeater.Layout>
+                                <UniformGridLayout MinItemWidth="150" MinColumnSpacing="8" MinRowSpacing="8" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ExcludedShare">
+                                    <Button Click="OnRemoveExcluded" Tag="{x:Bind}" ToolTipService.ToolTip="{l:L K='Remove from the excluded shares'}" AutomationProperties.Name="{x:Bind Symbol}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{x:Bind Symbol}" />
+                                            <FontIcon Glyph="&#xE711;" FontSize="10" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Execution and costs'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <ComboBox x:Name="FillBox" Header="{l:L K='Orders fill at'}" MinWidth="460" SelectionChanged="OnFill" />
+                        <VariableSizedWrapGrid Orientation="Horizontal" ItemWidth="270">
+                            <NumberBox Header="{l:L K='Slippage (basis points)'}" Value="{x:Bind ViewModel.SlippageBps, Mode=TwoWay}" Minimum="0" Maximum="500" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='At most of a session&#x2019;s value (%)'}" Value="{x:Bind ViewModel.ParticipationPct, Mode=TwoWay}" Minimum="0" Maximum="100" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Brokerage per side (%, empty = list rate)'}" Value="{x:Bind ViewModel.BrokeragePct, Mode=TwoWay}" Minimum="0" Maximum="1" SmallChange="0.01" Style="{StaticResource FieldStyle}" />
+                            <NumberBox Header="{l:L K='Idle cash earns (%/year)'}" Value="{x:Bind ViewModel.CashYieldPct, Mode=TwoWay}" Minimum="-50" Maximum="300" Style="{StaticResource FieldStyle}" />
+                        </VariableSizedWrapGrid>
+                        <ToggleSwitch Header="{l:L K='Spend sale proceeds at once (broker buying power) instead of after T+2 settlement'}" IsOn="{x:Bind ViewModel.InstantProceeds, Mode=TwoWay}"
+                                      OnContent="{l:L K='On'}" OffContent="{l:L K='Off'}" />
+                        <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left"
+                                   Text="{l:L K='Costs per side are the exchange, CSD and technology fees plus brokerage (list 0.144%), and sells pay the 0.5% tax: about 1.4% a round trip. Idle cash earning a fixed-income fund&#x2019;s yield is also the hurdle of the Sharpe ratio: at this inflation, beating zero in rials says little.'}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Grid search with an out-of-sample check -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{l:L K='Find the best parameters'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords" MaxWidth="900" HorizontalAlignment="Left"
+                                   Text="{l:L K='Runs the strategy as set above with 54 combinations of positions (5, 8, 12), ranking interval (5, 10, 20 sessions), trailing stop (off, 10%, 20%) and regime filter (on, off) over past years. They are ranked on the first two thirds and checked on the last third, which the ranking never saw. Click a row to take its values.'}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <NumberBox Header="{l:L K='Years'}" Value="{x:Bind ViewModel.TuneYears, Mode=TwoWay}" Minimum="1" Maximum="10" Width="140" SpinButtonPlacementMode="Compact" />
+                            <ComboBox x:Name="ObjectiveBox" Header="{l:L K='Rank by'}" MinWidth="300" SelectionChanged="OnObjective" />
+                            <Button Content="{l:L K='Run'}" Click="OnTune" VerticalAlignment="Bottom" IsEnabled="{x:Bind l:Bools.Not(ViewModel.IsTuning), Mode=OneWay}" />
+                            <ProgressRing IsActive="{x:Bind ViewModel.IsTuning, Mode=OneWay}" Width="18" Height="18" VerticalAlignment="Bottom" />
+                        </StackPanel>
+                        <TextBlock Text="{x:Bind ViewModel.TuneSummary, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" MaxWidth="1000" HorizontalAlignment="Left" />
+                        <Border Style="{StaticResource CardStyle}" Padding="0" Height="320" Visibility="{x:Bind ViewModel.HasTuneRows, Mode=OneWay}">
+                            <controls:DataTable x:Name="TuneTable" Items="{x:Bind ViewModel.TuneRows, Mode=OneWay}" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Save -->
+        <Grid Grid.Row="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{x:Bind ViewModel.Message, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{l:L K='Cancel'}" Click="OnCancel" />
+            <Button x:Name="SaveButton" Grid.Column="2" Style="{StaticResource AccentButtonStyle}" Click="OnSave" />
+        </Grid>
+    </Grid>
+</Page>

@@ -85,6 +85,12 @@ public sealed class MarketApiRouter(IServiceProvider services, SettingsService s
 
     public Task<ShortlistDto> GetShortlistAsync(string? asOf, CancellationToken cancellationToken) => Api.GetShortlistAsync(asOf, cancellationToken);
 
+    public Task<List<SimulationPresetDto>> GetSimulationPresetsAsync(CancellationToken cancellationToken) => Api.GetSimulationPresetsAsync(cancellationToken);
+
+    public Task<SimulationResultDto> RunSimulationAsync(SimulationRunRequestDto request, CancellationToken cancellationToken) => Api.RunSimulationAsync(request, cancellationToken);
+
+    public Task<SimulationTuningDto> TuneSimulationAsync(SimulationTuneRequestDto request, CancellationToken cancellationToken) => Api.TuneSimulationAsync(request, cancellationToken);
+
     public Task<MarketDataHealthDto> GetHealthAsync(CancellationToken cancellationToken) => Api.GetHealthAsync(cancellationToken);
 
     public Task<string> RunJobAsync(string job, CancellationToken cancellationToken) => Api.RunJobAsync(job, cancellationToken);

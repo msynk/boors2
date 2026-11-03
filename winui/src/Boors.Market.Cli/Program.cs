@@ -39,6 +39,10 @@ if (cli.Positional.Count == 0 || cli.Has("help"))
               all [--max N] [--details]                   everything above in dependency order
           market overview|breadth|sectors|movers <kind>|screen <kind>|metrics <symbol>|search <text>|watch [--filter "..."]
                                                  Read-side analytics over the store (what the workstation pages show).
+          simulate [tune] [--preset balanced|adaptive|trend|value|flow|swing] [--start yyyy-MM-dd] [--capital rials]
+                   [--positions N] [--rebalance N] [--min-hold N] [--hold F] [--stop F] [--trailing F] [--adaptive] [--no-regime]
+                   [--years N] [--objective return|sharpe|calmar]
+                                                 Replay a strategy from a start date to the latest session (tune: parameter sweep, in/out of sample).
           rebuild                                Delete the store and rebuild it from the raw cache only (no network).
           health                                 Dataset freshness, last job runs and last probe for this node.
           query "<sql>" [--max N]                Run SQL against the market store.
@@ -74,6 +78,7 @@ builder.Services.AddTransient<FetchCommands>();
 builder.Services.AddTransient<VerifyCommands>();
 builder.Services.AddTransient<CollectCommands>();
 builder.Services.AddTransient<MarketCommands>();
+builder.Services.AddTransient<SimulateCommands>();
 
 if (cli.At(0) == "rebuild")
 {
@@ -112,6 +117,7 @@ try
         ("verify", "contracts") => await services.GetRequiredService<CollectCommands>().VerifyContractsAsync(cli, token),
         ("verify", "reconcile") => await services.GetRequiredService<CollectCommands>().VerifyReconcileAsync(cli, token),
         ("market", _) => services.GetRequiredService<MarketCommands>().Run(cli),
+        ("simulate", _) => services.GetRequiredService<SimulateCommands>().Run(cli),
         ("collect", _) => await services.GetRequiredService<CollectCommands>().CollectAsync(cli, policy, token),
         ("rebuild", _) => await services.GetRequiredService<CollectCommands>().RebuildAsync(cli, token),
         ("health", _) => services.GetRequiredService<CollectCommands>().Health(),

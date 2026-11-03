@@ -87,6 +87,21 @@ public interface IMarketApi
     /// </summary>
     Task<ShortlistDto> GetShortlistAsync(string? asOf, CancellationToken cancellationToken);
 
+    /// <summary>GET api/v1/Simulation/GetPresets — the ready-made parameter sets (balanced, adaptive, trend, value, flow, swing).</summary>
+    Task<List<SimulationPresetDto>> GetSimulationPresetsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// POST api/v1/Simulation/Run — replays a simulation from its start to the latest session (or its end date). An
+    /// invalid definition (no capital, no parameters, an unknown name) is a 400.
+    /// </summary>
+    Task<SimulationResultDto> RunSimulationAsync(SimulationRunRequestDto request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// POST api/v1/Simulation/Tune — runs a grid of parameter sets over the last <c>years</c> (1–10, default 3), ranked
+    /// on the first two thirds and measured on the last third.
+    /// </summary>
+    Task<SimulationTuningDto> TuneSimulationAsync(SimulationTuneRequestDto request, CancellationToken cancellationToken);
+
     /// <summary>GET api/v1/MarketData/GetHealth</summary>
     Task<MarketDataHealthDto> GetHealthAsync(CancellationToken cancellationToken);
 

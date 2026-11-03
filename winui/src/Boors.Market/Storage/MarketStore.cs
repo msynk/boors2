@@ -635,6 +635,20 @@ public sealed class MarketStore : IDisposable
         return result;
     }
 
+    /// <summary>Hands each row of a query to <paramref name="read"/> without collecting them (panels of a million rows).</summary>
+    internal void Stream(string sql, (string Name, object? Value)[] parameters, Action<DuckDBDataReader> read)
+    {
+        using var connection = Connect();
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        foreach (var (name, value) in parameters)
+            command.Parameters.Add(new DuckDBParameter(name, value ?? DBNull.Value));
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            read(reader);
+    }
+
     private static Instrument ReadInstrument(DuckDBDataReader r) => new()
     {
         InsCode = r.GetInt64("ins_code"),
