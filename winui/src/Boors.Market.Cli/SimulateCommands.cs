@@ -23,6 +23,15 @@ public sealed class SimulateCommands(MarketSimulator simulator)
             TrailingStop = Fraction("trailing") ?? settings.TrailingStop,
             Adaptive = settings.Adaptive || cli.Has("adaptive"),
             RegimeFilter = settings.RegimeFilter && !cli.Has("no-regime"),
+            Fill = cli.Get("fill") switch
+            {
+                null => settings.Fill,
+                "immediate" => FillPrice.Immediate,
+                "next-close" => FillPrice.NextClose,
+                "next-open" => FillPrice.NextOpen,
+                var other => throw new ArgumentException($"Unknown fill '{other}'. Fills: immediate, next-close, next-open."),
+            },
+            InstantSaleProceeds = settings.InstantSaleProceeds && !cli.Has("t2"),
         };
         var capital = decimal.TryParse(cli.Get("capital"), NumberStyles.Number, CultureInfo.InvariantCulture, out var c) ? c : 10_000_000_000m;
         var start = DateOnly.TryParseExact(cli.Get("start"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var s)
@@ -78,7 +87,7 @@ public sealed class SimulateCommands(MarketSimulator simulator)
             result.Trades.TakeLast(cli.GetInt("trades", 15)).Select(t => (IReadOnlyList<object?>)[t.Date, t.Side, t.Symbol, Math.Round(t.Shares), Math.Round(t.Price), Pct(t.RealizedReturn), t.Reason]));
 
         Console.WriteLine();
-        Output.Table(["next session", "symbol", "shares", "value (B rial)", "reason"],
+        Output.Table(["waiting", "symbol", "shares", "value (B rial)", "reason"],
             result.Planned.Select(p => (IReadOnlyList<object?>)[p.Side, p.Symbol, Math.Round(p.Shares), Math.Round(p.Value / 1_000_000_000m, 2), p.Reason]));
 
         Console.WriteLine();

@@ -28,7 +28,7 @@ public enum SizingMethod
     Conviction,
 }
 
-/// <summary>The price an order decided at one session's close fills at on the next session.</summary>
+/// <summary>When an order decided at one session's close fills, and at what price.</summary>
 public enum FillPrice
 {
     /// <summary>The next session's first trade (priceFirst).</summary>
@@ -36,6 +36,14 @@ public enum FillPrice
 
     /// <summary>The next session's closing price — the day's VWAP on the main markets since 2025-12-22.</summary>
     NextClose,
+
+    /// <summary>
+    /// At once, at the closing price of the session it was decided on: a simulation has no exchange to wait for. Only
+    /// what the market would not have taken waits: a buy of a share that ended the session in a buy queue, a sell of one
+    /// in a sell queue, anything in a share that did not trade. Tehran has a closing-price stage for the main boards
+    /// since 2026-06-06; before that, trading at the very price a decision saw is a small flattering assumption.
+    /// </summary>
+    Immediate,
 }
 
 /// <summary>
@@ -217,7 +225,7 @@ public sealed record SimulationSettings
 
     // ---------------------------------------------------------------- execution and costs
 
-    public FillPrice Fill { get; init; } = FillPrice.NextClose;
+    public FillPrice Fill { get; init; } = FillPrice.Immediate;
 
     /// <summary>Extra price paid on a buy and given up on a sell, in basis points (10 = 0.1%).</summary>
     public double SlippageBps { get; init; } = 10;
@@ -229,7 +237,7 @@ public sealed record SimulationSettings
     public decimal? Brokerage { get; init; }
 
     /// <summary>Spend sale proceeds at once (broker buying power) instead of after settlement (T+2).</summary>
-    public bool InstantSaleProceeds { get; init; }
+    public bool InstantSaleProceeds { get; init; } = true;
 
     /// <summary>
     /// Yearly return on settled idle cash, as if it sat in a fixed-income fund (about 30% in 1405); 0 = cash earns
@@ -332,7 +340,8 @@ public sealed record SettingsRevision(DateOnly From, SimulationSettings Settings
 
 /// <summary>
 /// An order the user placed. It was decided with data up to <see cref="PlacedOn"/> (the latest session when it was
-/// placed) and can fill on the sessions after it, for <see cref="GoodForSessions"/> sessions. A buy gives a
+/// placed), fills at that close if <see cref="SimulationSettings.Fill"/> says at once and the close allows it, and
+/// otherwise can fill on the sessions after it, for <see cref="GoodForSessions"/> sessions. A buy gives a
 /// <see cref="Value"/> (rials) or <see cref="Shares"/>; a sell gives <see cref="Shares"/>, or neither to sell everything.
 /// </summary>
 public sealed record ManualOrder

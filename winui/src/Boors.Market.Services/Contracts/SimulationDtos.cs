@@ -50,11 +50,11 @@ public sealed record SimulationSettingsDto
     public int RegimeSessions { get; set; } = 100;
     public double DefensiveExposure { get; set; } = 0.5;
     public double TargetVolatility { get; set; }
-    public string Fill { get; set; } = "NextClose";
+    public string Fill { get; set; } = "Immediate";
     public double SlippageBps { get; set; } = 10;
     public double ParticipationCap { get; set; } = 0.10;
     public decimal? Brokerage { get; set; }
-    public bool InstantSaleProceeds { get; set; }
+    public bool InstantSaleProceeds { get; set; } = true;
     public double CashYield { get; set; } = 0.30;
 
     /// <summary>Instruments the strategy does not buy (a holding already in the portfolio is still managed).</summary>
@@ -65,9 +65,9 @@ public sealed record SimulationSettingsDto
 public sealed record SettingsRevisionDto(DateOnly From, SimulationSettingsDto Settings);
 
 /// <summary>
-/// An order the user placed on the latest session <paramref name="PlacedOn"/>; it can fill on the sessions after it, for
-/// <paramref name="GoodForSessions"/> sessions. A buy gives a value (rials) or shares; a sell gives shares, or neither
-/// to sell everything.
+/// An order the user placed on the latest session <paramref name="PlacedOn"/>; done at once it fills at that close if it
+/// can, and it can fill on the sessions after it, for <paramref name="GoodForSessions"/> sessions. A buy gives a value
+/// (rials) or shares; a sell gives shares, or neither to sell everything.
 /// </summary>
 public sealed record ManualOrderDto(
     string Id,
@@ -105,6 +105,19 @@ public sealed record SimulationSpecDto
 
     public string? Notes { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Moves a definition saved when orders waited for the next session's close and for settlement (the defaults then) to
+    /// fills at once. A simulation that chose the next session's open keeps its choice.
+    /// </summary>
+    public void UseFillsAtOnce()
+    {
+        foreach (var settings in Revisions.Select(r => r.Settings).Where(s => s.Fill == "NextClose"))
+        {
+            settings.Fill = "Immediate";
+            settings.InstantSaleProceeds = true;
+        }
+    }
 }
 
 /// <summary>POST api/v1/Simulation/Run — without <paramref name="Detail"/> the trades and the journal are left out.</summary>

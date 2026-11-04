@@ -28,6 +28,26 @@ public sealed class SimulationApiTests
     }
 
     [TestMethod]
+    public void A_definition_on_the_old_defaults_moves_to_fills_at_once_and_a_chosen_open_stays()
+    {
+        var spec = new SimulationSpecDto
+        {
+            Revisions =
+            [
+                new(new DateOnly(2026, 1, 3), new SimulationSettingsDto { Fill = "NextClose", InstantSaleProceeds = false }),
+                new(new DateOnly(2026, 2, 3), new SimulationSettingsDto { Fill = "NextOpen", InstantSaleProceeds = false }),
+            ],
+        };
+
+        spec.UseFillsAtOnce();
+
+        Assert.AreEqual("Immediate", spec.Revisions[0].Settings.Fill);
+        Assert.IsTrue(spec.Revisions[0].Settings.InstantSaleProceeds);
+        Assert.AreEqual("NextOpen", spec.Revisions[1].Settings.Fill);
+        Assert.IsFalse(spec.Revisions[1].Settings.InstantSaleProceeds);
+    }
+
+    [TestMethod]
     public void Settings_round_trip_and_out_of_range_numbers_are_clamped()
     {
         foreach (var (key, settings) in SimulationPresets.All)

@@ -126,6 +126,19 @@ public static class SimulationText
         _ => ($"○ {OrderState(state)}", Tone.Muted),
     };
 
+    /// <summary>What became of an order the moment it was placed, for the ticket.</summary>
+    public static string Placed(ManualOrderDto order, SimulationOrderStatusDto? status)
+    {
+        var side = Side(order.Side);
+        return status switch
+        {
+            { State: "filled" } => Loc.F("{0} {1} done at {2}.", side, order.Symbol, Fmt.Price(status.AveragePrice)),
+            { State: "partial" } => Loc.F("{0} {1}: {2} shares done at {3}; the rest waits.", side, order.Symbol, Fmt.Num(status.FilledShares, "N0"), Fmt.Price(status.AveragePrice)),
+            { Reason: { } reason } => Event(new SimulationEventDto(status.LastFillOn ?? order.PlacedOn, reason, order.InsCode, order.Symbol, null, null)),
+            _ => Loc.F("{0} {1} placed: it fills at the next session if the share trades and is not queued against you.", side, order.Symbol),
+        };
+    }
+
     /// <summary>
     /// A journal line as a sentence (the values depend on its kind; see SimulationEvents in the engine). In English a
     /// left-to-right mark leads, so a line that starts with a Persian symbol still reads left to right.
@@ -151,7 +164,7 @@ public static class SimulationText
             "blocked-no-trade" => Loc.F("{0}: the order waits — halted or not traded", symbol),
             "blocked-limit" => Loc.F("{0}: the order waits — the price did not reach its limit", symbol),
             "expired" => Loc.F("{0}: the order expired", symbol),
-            "no-cash" => Loc.F("{0}: the buy waits for cash (sale proceeds settle two sessions later)", symbol),
+            "no-cash" => Loc.F("{0}: the buy waits for cash", symbol),
             "not-held" => Loc.F("{0}: nothing to sell", symbol),
             "not-tradable" => Loc.T("Only shares of TSE and IFB are simulated (not funds, bonds or rights)"),
             "too-small" => Loc.F("{0}: the amount is less than one share", symbol),

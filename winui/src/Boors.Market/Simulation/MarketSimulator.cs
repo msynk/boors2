@@ -8,12 +8,13 @@ namespace Boors.Market.Simulation;
 /// latest session, so it follows the market every day as new sessions arrive, and its results are a pure function of
 /// its definition (parameters, the user's orders) and the data. The replay respects how Tehran trades:
 /// <list type="bullet">
-/// <item>Decisions use data up to a session's close only; orders fill on the next session (at its open or its close),
-/// never at the close they were decided on.</item>
-/// <item>No buy fills on a day locked in a buy queue, no sell on a day locked in a sell queue, nothing while a share is
-/// halted or not traded; such orders wait.</item>
+/// <item>Decisions use data up to a session's close only. There is no exchange to wait for, so by default an order is
+/// done at once, at the close it was decided on; a simulation can choose to fill on the next session instead.</item>
+/// <item>Only what the market would have taken fills: nothing at a close the share ended queued against the order, no
+/// buy on a later day locked in a buy queue, no sell on one locked in a sell queue, nothing while a share is halted or
+/// not traded. Such orders wait for a session that allows them.</item>
 /// <item>Costs per side from the dated rules (sale tax on sells), slippage, at most a share of the day's value traded,
-/// whole shares, sale proceeds usable after settlement (T+2) unless the broker's buying power is used.</item>
+/// whole shares, sale proceeds usable at once unless a simulation chooses to wait for settlement (T+2).</item>
 /// <item>Capital increases and dividends are reinvested in the position (the reports' total-return convention).</item>
 /// </list>
 /// The strategy ranks the buyable universe by a weighted composite of percentile ranks of <see cref="FactorKind"/>
@@ -143,7 +144,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
 
             var earliest = cached is not null && cached.Stamp == stamp && cachedFrom < from ? cachedFrom : from;
             cached = null;
-            cached = SimulationPanel.Load(store, earliest, stamp, cancellationToken);
+            cached = SimulationPanel.Load(store, rules, earliest, stamp, cancellationToken);
             cachedFrom = earliest;
             return cached;
         }
@@ -236,16 +237,19 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 if (lastSettings is not null && !ReferenceEquals(settings, lastSettings))
                     Note(t, SimulationEvents.SettingsChanged);
                 lastSettings = settings;
+                var immediate = settings.Fill == FillPrice.Immediate;
 
                 // The session fills what was decided at the previous close, under the parameters in force then:
-                // a revision dated t changes the decisions from t on, never what had already happened.
+                // a revision dated t changes the decisions (and, done at once, the fills) from t's close on, never
+                // what had already happened.
                 if (t > s0)
                 {
-                    var execution = SettingsAt(t - 1);
+                    var previous = SettingsAt(t - 1);
                     CorporateActions(t);
                     Settle(t);
-                    Accrue(t, execution);
-                    Execute(t, execution);
+                    Accrue(t, previous);
+                    if (!immediate)
+                        Execute(t, previous);
                 }
 
                 Mark(t);
@@ -253,6 +257,13 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                     Book(order, t);
                 if (!manual)
                     Decide(t, settings, commit: true, force: false);
+
+                // Done at once: what the close allows fills at it, and the session's value already carries the costs.
+                if (immediate)
+                {
+                    Execute(t, settings);
+                    Mark(t, again: true);
+                }
             }
 
             if (spec.End is not null && end < latest)
@@ -353,8 +364,16 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
             cash *= (decimal)Math.Pow(1 + settings.CashYield, days / 365.0);
         }
 
-        private void Mark(int t)
+        /// <summary>The session's value; <paramref name="again"/> replaces it after the fills of its own close.</summary>
+        private void Mark(int t, bool again = false)
         {
+            if (again)
+            {
+                equity.RemoveAt(equity.Count - 1);
+                if (equity.Count > 0 && equity[^1].Equity > 0)
+                    dailyReturns.RemoveAt(dailyReturns.Count - 1);
+            }
+
             decimal invested = 0;
             foreach (var p in positions.Values)
             {
@@ -373,7 +392,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
             if (equity.Count > 0 && equity[^1].Equity > 0)
                 dailyReturns.Add((double)(total / equity[^1].Equity) - 1);
             // The average share compounds from the simulation's start (1 there), whatever the panel's first session.
-            if (t > s0)
+            if (t > s0 && !again)
                 equalLevel *= 1 + panel.EqualReturn[t];
             equity.Add(new EquityPoint(panel.Sessions[t], total, held, invested, Finite(panel.Tedpix[t]), equalLevel, Finite(panel.Usd[t])));
         }
@@ -413,12 +432,15 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 Shares = order.Shares,
                 All = order.Side == OrderSide.Sell && order.Shares is null,
                 Limit = order.LimitPrice,
-                First = t + 1,
+                First = FirstFill(t, SettingsAt(t)),
                 Last = last,
                 Reason = SimulationEvents.Manual,
                 OrderId = order.Id,
             });
         }
+
+        /// <summary>The first session an order decided at the close of t can fill on.</summary>
+        private static int FirstFill(int t, SimulationSettings settings) => settings.Fill == FillPrice.Immediate ? t : t + 1;
 
         private void Execute(int t, SimulationSettings settings)
         {
@@ -462,9 +484,13 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
             var cell = s.Has(t) ? s.Status[s.I(t)] : Cell.None;
             if (!PanelStock.IsPriced(cell))
                 return Blocked(order, t, SimulationEvents.BlockedNoTrade);
-            if (order.Side == OrderSide.Buy && cell == Cell.LockedUp)
+
+            // An order decided at this very close meets only how the session ended; one that waited through the day met
+            // all of it, so only a day locked from start to end kept it out.
+            var atClose = settings.Fill == FillPrice.Immediate && t == order.First;
+            if (order.Side == OrderSide.Buy && (cell == Cell.LockedUp || atClose && cell == Cell.ClosedUp))
                 return Blocked(order, t, SimulationEvents.BlockedBuyQueue);
-            if (order.Side == OrderSide.Sell && cell == Cell.LockedDown)
+            if (order.Side == OrderSide.Sell && (cell == Cell.LockedDown || atClose && cell == Cell.ClosedDown))
                 return Blocked(order, t, SimulationEvents.BlockedSellQueue);
 
             var i = s.I(t);
@@ -478,7 +504,8 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
             if (order.Limit is { } limit)
             {
                 var l = (double)limit;
-                if (order.Side == OrderSide.Buy ? l < s.Low[i] : s.High[i] > 0 && l > s.High[i])
+                // Placed after the close, a limit meets the closing price: a better price earlier that day is hindsight.
+                if (order.Side == OrderSide.Buy ? l < s.Low[i] || atClose && basis > l : s.High[i] > 0 && l > s.High[i] || atClose && basis < l)
                     return Blocked(order, t, SimulationEvents.BlockedLimit);
                 price = order.Side == OrderSide.Buy ? Math.Min(price, l) : Math.Max(price, l);
             }
@@ -624,7 +651,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
             {
                 if (exiting.Contains(p.Stock) || RiskExit(p, t, settings) is not { } reason)
                     continue;
-                orders.Add(new Pending { Stock = p.Stock, Side = OrderSide.Sell, All = true, First = t + 1, Last = int.MaxValue, Reason = reason, Risk = true });
+                orders.Add(new Pending { Stock = p.Stock, Side = OrderSide.Sell, All = true, First = FirstFill(t, settings), Last = int.MaxValue, Reason = reason, Risk = true });
                 exiting.Add(p.Stock);
                 if (commit)
                 {
@@ -716,6 +743,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
         private IEnumerable<Pending> Rebalance(int t, SimulationSettings settings, Ranking ranking, HashSet<int> exiting, double target, bool commit)
         {
             var orders = new List<Pending>();
+            var first = FirstFill(t, settings);
             var count = Math.Max(1, settings.Positions);
             var holdRank = Math.Max(count, (int)Math.Ceiling(ranking.Ordered.Count * Math.Clamp(settings.HoldPercentile, 0, 1)));
             var keep = new List<int>();
@@ -731,7 +759,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                     continue;
                 }
 
-                orders.Add(new Pending { Stock = p.Stock, Side = OrderSide.Sell, All = true, First = t + 1, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.RankExit, Rank = ranked ? rank.Rank : null, Score = ranked ? rank.Score : null });
+                orders.Add(new Pending { Stock = p.Stock, Side = OrderSide.Sell, All = true, First = first, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.RankExit, Rank = ranked ? rank.Rank : null, Score = ranked ? rank.Score : null });
                 if (commit)
                     Note(t, SimulationEvents.RankExit, p.Stock, ranked ? rank.Rank : null);
             }
@@ -768,7 +796,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 var score = ranking.Ranks.ContainsKey(stock) ? r.Score : (double?)null;
                 if (!positions.TryGetValue(stock, out var p))
                 {
-                    orders.Add(new Pending { Stock = stock, Side = OrderSide.Buy, Value = goal, First = t + 1, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Entry, Rank = rank, Score = score });
+                    orders.Add(new Pending { Stock = stock, Side = OrderSide.Buy, Value = goal, First = first, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Entry, Rank = rank, Score = score });
                     continue;
                 }
 
@@ -777,8 +805,8 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 if (Math.Abs(gap) <= band * goal || !ranking.Ranks.ContainsKey(stock))
                     continue;
                 orders.Add(gap > 0
-                    ? new Pending { Stock = stock, Side = OrderSide.Buy, Value = gap, First = t + 1, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Resize, Rank = rank, Score = score }
-                    : new Pending { Stock = stock, Side = OrderSide.Sell, Shares = Math.Floor(-gap / close), First = t + 1, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Resize, Rank = rank, Score = score });
+                    ? new Pending { Stock = stock, Side = OrderSide.Buy, Value = gap, First = first, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Resize, Rank = rank, Score = score }
+                    : new Pending { Stock = stock, Side = OrderSide.Sell, Shares = Math.Floor(-gap / close), First = first, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Resize, Rank = rank, Score = score });
             }
 
             if (commit)
@@ -879,13 +907,16 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 .OrderByDescending(x => x.Score).ThenBy(x => panel.Stocks[x.Stock].InsCode)
                 .ToList();
 
+            // A buy that could not fill is not worth a free place: a locked day keeps it out, and so does a queue at the
+            // close when the fill is at that close.
+            var immediate = settings.Fill == FillPrice.Immediate;
             var ranks = new Dictionary<int, (double, int)>();
             for (var k = 0; k < scored.Count; k++)
                 ranks[scored[k].Stock] = (scored[k].Score, k + 1);
             return new Ranking(
                 ranks,
                 [.. scored.Select(x => x.Stock)],
-                [.. scored.Where(x => x.Cell != Cell.LockedUp && !settings.Excluded.Contains(panel.Stocks[x.Stock].InsCode)).Select(x => x.Stock)],
+                [.. scored.Where(x => x.Cell != Cell.LockedUp && !(immediate && x.Cell == Cell.ClosedUp) && !settings.Excluded.Contains(panel.Stocks[x.Stock].InsCode)).Select(x => x.Stock)],
                 eligible.Count,
                 weights);
         }
@@ -1061,7 +1092,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
 
         private static string? StatusName(Cell cell) => cell switch
         {
-            Cell.Traded => "Traded",
+            Cell.Traded or Cell.ClosedUp or Cell.ClosedDown => "Traded",
             Cell.NoTrade => "NoTrade",
             Cell.Halted => "SymbolHalted",
             Cell.Closed => "MarketClosed",

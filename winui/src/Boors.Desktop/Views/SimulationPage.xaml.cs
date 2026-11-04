@@ -191,7 +191,7 @@ public sealed partial class SimulationPage : Page, IReloadable
         }
     }
 
-    /// <summary>Manual mode: the ticket, your orders and the strategy's suggestions. Automatic: the next session's orders.</summary>
+    /// <summary>Manual mode: the ticket, your orders and the strategy's suggestions. Automatic: the waiting orders.</summary>
     private void ConfigureMode()
     {
         var manual = ViewModel.IsManual;
@@ -199,13 +199,15 @@ public sealed partial class SimulationPage : Page, IReloadable
         TicketColumn.Width = manual ? new GridLength(360) : new GridLength(0);
         SecondOrdersTitle.Visibility = SecondOrdersCard.Visibility = Ui.Show(manual);
         HoldingsHint.Text = manual ? Loc.T("Click a holding to sell it.") : Loc.T("Click a holding to open its symbol page.");
-        TicketNote.Text = Loc.T("The order is decided with the data up to the latest session and fills at the next session's price (your parameters choose its open or its close), only if the share trades and is not locked in a queue against you, for at most a share of the session's value. Costs and the 0.5% sale tax are taken from the rules in force.");
+        TicketNote.Text = ViewModel.FillsAtOnce
+            ? Loc.T("The order is done at once at the latest session's closing price, unless the share ended that session queued against you, was halted or did not trade, or the price is beyond your limit: then it waits for a session that allows it. At most a share of the session's value fills. Costs and the 0.5% sale tax are taken from the rules in force.")
+            : Loc.T("The order is decided with the data up to the latest session and fills at the next session's price (your parameters choose its open or its close), only if the share trades and is not locked in a queue against you, for at most a share of the session's value. Costs and the 0.5% sale tax are taken from the rules in force.");
         if (columnsForManual == manual)
             return;
         columnsForManual = manual;
 
         FirstOrdersTable.Columns = manual ? OrderColumns() : PlanColumns(withScore: true);
-        FirstOrdersTable.EmptyText = manual ? Loc.T("You have not placed an order yet.") : Loc.T("Nothing to trade at the next session.");
+        FirstOrdersTable.EmptyText = manual ? Loc.T("You have not placed an order yet.") : Loc.T("No order is waiting.");
         SecondOrdersTable.Columns = PlanColumns(withScore: true);
         SecondOrdersTable.EmptyText = Loc.T("The strategy would not change anything now.");
         ShowOrders();
@@ -222,7 +224,7 @@ public sealed partial class SimulationPage : Page, IReloadable
         }
         else
         {
-            FirstOrdersTitle.Text = Loc.T("Orders for the next session, decided at the latest close");
+            FirstOrdersTitle.Text = Loc.T("Orders waiting for a session that can fill them");
             FirstOrdersTable.Items = ViewModel.Planned;
         }
     }
@@ -270,7 +272,7 @@ public sealed partial class SimulationPage : Page, IReloadable
         HoldingsTab.Text = $"{Loc.T("Holdings")} ({Fmt.Number(ViewModel.Holdings.Count)})";
         OrdersTab.Text = ViewModel.IsManual
             ? $"{Loc.T("Orders")} ({Fmt.Number(ViewModel.Orders.Count(o => o.State is "pending" or "partial"))})"
-            : $"{Loc.T("Next session")} ({Fmt.Number(ViewModel.Planned.Count)})";
+            : $"{Loc.T("Waiting orders")} ({Fmt.Number(ViewModel.Planned.Count)})";
         TradesTab.Text = $"{Loc.T("Trades")} ({Fmt.Number(ViewModel.Trades.Count)})";
         JournalTab.Text = Loc.T("Journal");
         PerformanceTab.Text = Loc.T("Performance");

@@ -98,7 +98,7 @@
         </SelectorBar>
 
         <Grid Grid.Row="4">
-            <!-- Overview: the curve against the benchmarks, the drawdown, the next session, the latest events -->
+            <!-- Overview: the curve against the benchmarks, the drawdown, the waiting orders, the latest events -->
             <ScrollViewer x:Name="OverviewPanel" VerticalScrollBarVisibility="Auto">
                 <Grid ColumnSpacing="16" RowSpacing="16" Padding="0,0,0,8">
                     <Grid.ColumnDefinitions>
@@ -138,7 +138,7 @@
                     </Border>
                     <Border Grid.Column="1" Style="{StaticResource CardStyle}">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="{l:L K='Next session'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="{l:L K='Waiting orders'}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock Text="{x:Bind ViewModel.NextText, Mode=OneWay}" Style="{StaticResource BodyTextBlockStyle}" TextWrapping="WrapWholeWords" />
                             <ItemsRepeater ItemsSource="{x:Bind ViewModel.Planned, Mode=OneWay}">
                                 <ItemsRepeater.Layout>
@@ -199,7 +199,7 @@
                 </Border>
             </Grid>
 
-            <!-- Orders: the ticket and the strategy's suggestions in manual mode; the next session's orders in automatic mode -->
+            <!-- Orders: the ticket and the strategy's suggestions in manual mode; the waiting orders in automatic mode -->
             <Grid x:Name="OrdersPanel" ColumnSpacing="12" Visibility="Collapsed">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="TicketColumn" Width="360" />
@@ -304,6 +304,6 @@
         </Grid>
 
         <TextBlock Grid.Row="5" Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
-                   Text="{l:L K='Paper trading for research and practice, not buy or sell advice. Fills assume the next session&#x2019;s price for at most a share of its value traded; real queues, partial fills and your broker can differ.'}" />
+                   Text="{l:L K='Paper trading for research and practice, not buy or sell advice. Fills assume the price your parameters choose, for at most a share of the session&#x2019;s value traded; real queues, partial fills and your broker can differ.'}" />
     </Grid>
 </Page>

@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Boors.Market.Analytics;
+using Boors.Market.Domain;
+using Boors.Market.Rules;
 using Boors.Market.Sources.Macro;
 using Boors.Market.Sources.Tsetmc;
 using Boors.Market.Storage;
@@ -20,6 +22,12 @@ internal enum Cell : byte
     Reopen,
     LockedUp,
     LockedDown,
+
+    /// <summary>Traded freely during the day but ended it in a buy queue: nobody could buy at that close.</summary>
+    ClosedUp,
+
+    /// <summary>Traded freely during the day but ended it in a sell queue: nobody could sell at that close.</summary>
+    ClosedDown,
 }
 
 /// <summary>
@@ -67,7 +75,7 @@ internal sealed class PanelStock(int offset, int length)
 
     public int I(int t) => t - Offset;
 
-    public static bool IsPriced(Cell cell) => cell is Cell.Traded or Cell.Reopen or Cell.LockedUp or Cell.LockedDown;
+    public static bool IsPriced(Cell cell) => cell is Cell.Traded or Cell.Reopen or Cell.LockedUp or Cell.LockedDown or Cell.ClosedUp or Cell.ClosedDown;
 }
 
 /// <summary>Raw factor values and trading facts of every equity at one session's close (shared by all simulations).</summary>
@@ -101,6 +109,9 @@ internal sealed class SimulationPanel
     public const int Month = 20;
     public const int Year = 240;
     private const int SnapshotLimit = 600;
+
+    /// <summary>TSETMC rounds the band to the tick, so "at the band" allows this much (as <see cref="DayStatusClassifier"/> does).</summary>
+    private const double QueueTolerance = 0.005;
 
     private static readonly FactorKind[] Factors = Enum.GetValues<FactorKind>();
 
@@ -160,7 +171,7 @@ internal sealed class SimulationPanel
     /// </summary>
     public static string DataStamp(MarketStore store) =>
         store.Query("""
-            SELECT (SELECT count(*) || ':' || coalesce(sum(hash(ins_code, d, close, yesterday, trade_count, value, day_status, eps)), 0) FROM daily_bar),
+            SELECT (SELECT count(*) || ':' || coalesce(sum(hash(ins_code, d, close, last, yesterday, trade_count, value, day_status, eps, allowed_low, allowed_high, bid1_price, bid1_volume, ask1_price, ask1_volume)), 0) FROM daily_bar),
                    (SELECT count(*) || ':' || coalesce(sum(hash(ins_code, d, buy_i_value, sell_i_value, buy_i_count, sell_i_count)), 0) FROM client_type_daily),
                    (SELECT count(*) || ':' || coalesce(sum(hash(ins_code, d, close)), 0) FROM index_daily),
                    (SELECT count(*) || ':' || coalesce(sum(hash(series, d, close)), 0) FROM macro_daily),
@@ -178,7 +189,7 @@ internal sealed class SimulationPanel
             """, [("date", date), ("skip", Math.Max(0, count - 1))], r => r.GetFieldValue<DateOnly>(0)).Single();
 
     /// <summary>The equity sessions from <paramref name="from"/> to the latest one; null when the store has none.</summary>
-    public static SimulationPanel? Load(MarketStore store, DateOnly from, string stamp, CancellationToken cancellationToken)
+    public static SimulationPanel? Load(MarketStore store, MarketRules rules, DateOnly from, string stamp, CancellationToken cancellationToken)
     {
         var sessions = store.Query($"""
             SELECT DISTINCT b.d FROM daily_bar b JOIN instrument i USING (ins_code)
@@ -211,7 +222,9 @@ internal sealed class SimulationPanel
         store.Stream($"""
             SELECT b.ins_code, b.d, CAST(b.open AS DOUBLE), CAST(b.high AS DOUBLE), CAST(b.low AS DOUBLE), CAST(b.close AS DOUBLE),
                    CAST(b.yesterday AS DOUBLE), b.trade_count, CAST(b.value AS DOUBLE), b.day_status, CAST(b.eps AS DOUBLE),
-                   CAST(c.buy_i_value - c.sell_i_value AS DOUBLE), CAST(c.buy_i_value AS DOUBLE), CAST(c.sell_i_value AS DOUBLE), c.buy_i_count, c.sell_i_count
+                   CAST(c.buy_i_value - c.sell_i_value AS DOUBLE), CAST(c.buy_i_value AS DOUBLE), CAST(c.sell_i_value AS DOUBLE), c.buy_i_count, c.sell_i_count,
+                   CAST(b.last AS DOUBLE), CAST(b.allowed_low AS DOUBLE), CAST(b.allowed_high AS DOUBLE),
+                   CAST(b.bid1_price AS DOUBLE), b.bid1_volume, CAST(b.ask1_price AS DOUBLE), b.ask1_volume
             FROM daily_bar b JOIN instrument i USING (ins_code)
             LEFT JOIN client_type_daily c ON c.ins_code = b.ins_code AND c.d = b.d
             WHERE {MarketAnalytics.Equity} AND b.d >= $from
@@ -221,7 +234,8 @@ internal sealed class SimulationPanel
             var row = new Row(
                 r.GetInt64(0), r.GetFieldValue<DateOnly>(1), D(r, 2), D(r, 3), D(r, 4), D(r, 5), D(r, 6), r.GetInt64(7), D(r, 8),
                 r.IsDBNull(9) ? null : r.GetString(9), r.IsDBNull(10) ? double.NaN : r.GetDouble(10),
-                r.IsDBNull(11) ? double.NaN : r.GetDouble(11), D(r, 12), D(r, 13), r.IsDBNull(14) ? 0 : r.GetInt32(14), r.IsDBNull(15) ? 0 : r.GetInt32(15));
+                r.IsDBNull(11) ? double.NaN : r.GetDouble(11), D(r, 12), D(r, 13), r.IsDBNull(14) ? 0 : r.GetInt32(14), r.IsDBNull(15) ? 0 : r.GetInt32(15),
+                D(r, 16), D(r, 17), D(r, 18), r.IsDBNull(19) ? null : r.GetDouble(19), r.IsDBNull(20) ? 0 : r.GetInt64(20), r.IsDBNull(21) ? null : r.GetDouble(21), r.IsDBNull(22) ? 0 : r.GetInt64(22));
             if (buffer.Count > 0 && buffer[0].InsCode != row.InsCode)
             {
                 Add(buffer);
@@ -267,6 +281,8 @@ internal sealed class SimulationPanel
 
                 var i = t - offset;
                 var cell = ToCell(bar.Status, bar.TradeCount);
+                if (cell == Cell.Traded)
+                    cell = AtClose(bar, instrument.Class, rules);
                 stock.Status[i] = cell;
                 stock.Open[i] = bar.Open;
                 stock.High[i] = bar.High;
@@ -369,6 +385,32 @@ internal sealed class SimulationPanel
         null when trades > 0 => Cell.Traded,
         _ => Cell.NoTrade,
     };
+
+    /// <summary>
+    /// Whether a traded session ended in a queue. The end-of-day book says so when it was collected: a bid at the ceiling
+    /// with no offer inside the band, or the mirror at the floor. History has only the last trade, so a last trade at the
+    /// band and at the day's extreme counts: on the book of 2026-11-04 that caught all 242 real queues, and about 85% of
+    /// what it caught was one. The rest closed at the band with offers left and wait a session they did not have to.
+    /// </summary>
+    private static Cell AtClose(in Row bar, InstrumentClass instrumentClass, MarketRules rules)
+    {
+        if (bar.AllowedHigh > 0 && bar.AllowedLow > 0 && (bar.Bid is not null || bar.Ask is not null))
+        {
+            if (bar.Bid >= bar.AllowedHigh && !(bar.AskVolume > 0 && bar.Ask <= bar.AllowedHigh))
+                return Cell.ClosedUp;
+            return bar.Ask > 0 && bar.Ask <= bar.AllowedLow && !(bar.BidVolume > 0 && bar.Bid >= bar.AllowedLow) ? Cell.ClosedDown : Cell.Traded;
+        }
+
+        var atHigh = bar.Last >= bar.High;
+        var atLow = bar.Last <= bar.Low;
+        if (bar.Last <= 0 || bar.Yesterday <= 0 || !atHigh && !atLow)
+            return Cell.Traded;
+
+        var limit = (double)rules.GetPriceLimit(instrumentClass, bar.Date).Value;
+        if (atHigh && bar.Last >= bar.Yesterday * (1 + limit) * (1 - QueueTolerance))
+            return Cell.ClosedUp;
+        return atLow && bar.Last <= bar.Yesterday * (1 - limit) * (1 + QueueTolerance) ? Cell.ClosedDown : Cell.Traded;
+    }
 
     private static double[] Align(DateOnly[] sessions, IEnumerable<(DateOnly Date, double Value)> series)
     {
@@ -598,5 +640,6 @@ internal sealed class SimulationPanel
 
     private readonly record struct Row(
         long InsCode, DateOnly Date, double Open, double High, double Low, double Close, double Yesterday, long TradeCount, double Value,
-        string? Status, double Eps, double Flow, double BuyValue, double SellValue, int BuyCount, int SellCount);
+        string? Status, double Eps, double Flow, double BuyValue, double SellValue, int BuyCount, int SellCount,
+        double Last, double AllowedLow, double AllowedHigh, double? Bid, long BidVolume, double? Ask, long AskVolume);
 }

@@ -26,7 +26,7 @@ public sealed record OrderLine(ManualOrderDto Order, SimulationOrderStatusDto? S
 
 /// <summary>
 /// One simulation: its replay (headline tiles, the equity curve against TEDPIX and the average share, drawdown,
-/// holdings, the next session's orders, trades, journal, performance and monthly returns, the strategy's factor
+/// holdings, the waiting orders, trades, journal, performance and monthly returns, the strategy's factor
 /// weights) and its actions — the order ticket in manual mode, accepting a suggestion, cancelling an order, stopping
 /// or resuming the tracking. Every change saves the definition and replays it.
 /// </summary>
@@ -187,9 +187,9 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
         var buys = r.Planned.Count(p => p.Side == "Buy");
         var sells = r.Planned.Count - buys;
         NextText = !IsTracking ? Loc.F("Tracking stopped on {0}.", Fmt.Date(r.AsOf))
-            : r.Planned.Count > 0 ? Loc.F("Next session: {0} buys and {1} sells are waiting to fill.", Fmt.Number(buys), Fmt.Number(sells))
+            : r.Planned.Count > 0 ? Loc.F("{0} buys and {1} sells are waiting to fill.", Fmt.Number(buys), Fmt.Number(sells))
             : IsManual ? Loc.T("No order is waiting. Place one below, or take a suggestion of the strategy.")
-            : Loc.T("Nothing to trade at the next session.");
+            : Loc.T("No order is waiting.");
         if (!IsManual && IsTracking && r.NextRebalanceIn is { } next)
             NextText += " " + Loc.F("Next ranking in {0} sessions.", Fmt.Number(next));
 
@@ -361,7 +361,12 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
             new(risk, Loc.T("Volatility target"), Pct(s.TargetVolatility)),
             new(universe, Loc.T("Least value traded per session"), Loc.F("{0} billion toman", Fmt.BillionToman(s.MinValue))),
             new(universe, Loc.T("Excluded shares"), Fmt.Number(s.Excluded.Count)),
-            new(execution, Loc.T("Fills at"), s.Fill == "NextOpen" ? Loc.T("The next session's open") : Loc.T("The next session's close")),
+            new(execution, Loc.T("Fills at"), s.Fill switch
+            {
+                "NextOpen" => Loc.T("The next session's open"),
+                "NextClose" => Loc.T("The next session's close"),
+                _ => Loc.T("At once, at the closing price of the session it was decided on"),
+            }),
             new(execution, Loc.T("Slippage"), Loc.F("{0} basis points", Fmt.Num(s.SlippageBps, "N0"))),
             new(execution, Loc.T("At most of a session's value"), Pct(s.ParticipationCap)),
             new(execution, Loc.T("Sale proceeds"), s.InstantSaleProceeds ? Loc.T("Usable at once (broker buying power)") : Loc.T("Usable after settlement (T+2)")),
@@ -398,6 +403,9 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
 
     [ObservableProperty]
     public partial string? TicketMessage { get; set; }
+
+    /// <summary>Whether orders are done at once under the parameters in force (the ticket explains the fill accordingly).</summary>
+    public bool FillsAtOnce => Saved?.Spec.Revisions.LastOrDefault()?.Settings.Fill == "Immediate";
 
     public static IReadOnlyList<Choice> Sides => [new("Buy", Loc.T("Buy")), new("Sell", Loc.T("Sell"))];
 
@@ -480,7 +488,7 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
             return false;
         }
 
-        // Decided with the data up to the latest session: it can fill from the next session on.
+        // Decided with the data up to the latest session: done at once it fills at that close, else from the next session on.
         var order = new ManualOrderDto(
             SimulationEditorViewModel.NewId(),
             Result?.Latest ?? DateOnly.FromDateTime(DateTime.Today),
@@ -494,9 +502,9 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
             null,
             DateTimeOffset.Now);
         tracker.Update(saved, saved.Spec with { Orders = [.. saved.Spec.Orders, order] });
-        TicketMessage = Loc.F("{0} {1} placed: it fills at the next session if the share trades and is not queued against you.", SimulationText.Side(order.Side), order.Symbol);
         ResetTicket(keepMessage: true);
         await LoadAsync(saved.Spec.Id);
+        TicketMessage = SimulationText.Placed(order, Result?.Orders.FirstOrDefault(o => o.OrderId == order.Id));
         return true;
     }
 

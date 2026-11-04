@@ -57,6 +57,12 @@ public sealed class SimulationSummary
 /// <summary>A simulation as saved on disk: its definition, its last summary and what the user has already seen.</summary>
 public sealed class SavedSimulation
 {
+    /// <summary>Version 2: orders are done at once (see <see cref="SimulationSpecDto.UseFillsAtOnce"/>).</summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>The format the file was written in (0 in a file from before versions); set when it is saved.</summary>
+    public int Version { get; set; }
+
     public SimulationSpecDto Spec { get; set; } = new();
     public SimulationSummary? Summary { get; set; }
 
@@ -99,7 +105,10 @@ public sealed class SimulationStore(SettingsService settings, ILogger<Simulation
             try
             {
                 if (JsonSerializer.Deserialize(File.ReadAllBytes(path), SimulationJsonContext.Default.SavedSimulation) is { Spec.Id.Length: > 0 } saved)
+                {
+                    Upgrade(saved);
                     result.Add(saved);
+                }
             }
             catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
             {
@@ -110,12 +119,27 @@ public sealed class SimulationStore(SettingsService settings, ILogger<Simulation
         return [.. result.OrderBy(s => s.Spec.CreatedAt)];
     }
 
+    /// <summary>
+    /// Brings a file from an older version up to date. Its replay changes with it, so the trades of the next replay count
+    /// as seen, not as new activity.
+    /// </summary>
+    private void Upgrade(SavedSimulation saved)
+    {
+        if (saved.Version >= SavedSimulation.CurrentVersion)
+            return;
+        saved.Spec.UseFillsAtOnce();
+        saved.SeenTrades = null;
+        Save(saved);
+        logger.LogInformation("Simulation {Id} now fills orders at once", saved.Spec.Id);
+    }
+
     public void Save(SavedSimulation simulation)
     {
         lock (gate)
         {
             try
             {
+                simulation.Version = SavedSimulation.CurrentVersion;
                 Directory.CreateDirectory(Folder);
                 var path = PathOf(simulation.Spec.Id);
                 var temp = path + ".tmp";

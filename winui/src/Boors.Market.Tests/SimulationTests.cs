@@ -25,7 +25,11 @@ public sealed class SimulationTests
         TrailingStop = 0,
         MinHoldSessions = 0,
         Weights = new Dictionary<FactorKind, double> { [FactorKind.Breakout] = 1 },
+        Fill = FillPrice.NextClose,
+        InstantSaleProceeds = false,
     };
+
+    private static readonly SimulationSettings AtOnce = Plain with { Fill = FillPrice.Immediate, InstantSaleProceeds = true };
 
     private MarketStore store = null!;
     private MarketSimulator simulator = null!;
@@ -328,6 +332,215 @@ public sealed class SimulationTests
         Assert.IsEmpty(result.Holdings);
     }
 
+    [TestMethod]
+    public void Done_at_once_a_manual_order_fills_at_the_close_it_was_placed_on_and_the_value_carries_its_costs()
+    {
+        AddEquities(1);
+        AddPath(1, _ => 0m, shape: (_, bar) => bar with { Open = 9_900, High = 10_100, Low = 9_900 });
+        var result = Run(ManualAtOnce(
+            Order("buy", 1, OrderSide.Buy, sessions[5], value: 50_000_000),
+            Order("sell", 1, OrderSide.Sell, sessions[10])), end: sessions[14]);
+
+        var buy = result.Trades[0];
+        Assert.AreEqual(sessions[5], buy.Date);
+        Assert.AreEqual(10_000m, buy.Price);
+        Assert.AreEqual(sessions[10], result.Trades[1].Date);
+
+        // One point a session, each after the fills of its own close.
+        Assert.AreSequenceEqual(sessions.Take(15).ToArray(), result.Equity.Select(p => p.Date).ToArray());
+        Assert.AreEqual(100_000_000m - 50_000_000m * BuyRate, result.Equity[5].Equity);
+        Assert.AreEqual(50_000_000m, result.Equity[5].Invested);
+        Assert.AreEqual(100_000_000m - 50_000_000m * (BuyRate + SellRate), result.Equity[10].Equity);
+        Assert.AreEqual(0m, result.Equity[10].Invested);
+        Assert.AreSequenceEqual(new[] { OrderStates.Filled, OrderStates.Filled }, result.Orders.Select(o => o.State).ToArray());
+    }
+
+    [TestMethod]
+    public void A_strategy_started_on_the_latest_session_holds_its_shares_at_once_with_nothing_waiting()
+    {
+        AddEquities(1, 2);
+        AddPath(1, _ => 0.01m);
+        AddPath(2, _ => -0.01m);
+        var result = Run(Automatic(sessions[^1], AtOnce with { Positions = 1 }));
+
+        var buy = result.Trades.Single();
+        Assert.AreEqual(1L, buy.InsCode);
+        Assert.AreEqual(sessions[^1], buy.Date);
+        Assert.AreEqual(Close(1, sessions.Count - 1), buy.Price);
+        Assert.AreEqual(1L, result.Holdings.Single().InsCode);
+        Assert.IsEmpty(result.Planned);
+    }
+
+    [TestMethod]
+    public void A_buy_at_a_close_that_ended_in_a_queue_waits_through_a_locked_day_and_fills_when_it_can()
+    {
+        // Session 5 trades freely but ends at the ceiling, session 6 is locked there all day, session 7 is free again.
+        AddEquities(1);
+        AddPath(1, i => i is 5 or 6 ? 0.03m : 0m,
+            statusOn: i => i == 6 ? DayStatus.QueueLockedUp : DayStatus.Traded,
+            shape: (i, bar) => i == 5 ? bar with { Low = bar.Yesterday } : bar);
+        var result = Run(ManualAtOnce(Order("buy", 1, OrderSide.Buy, sessions[5], shares: 1_000)), end: sessions[10]);
+
+        Assert.Contains(j => j.Kind == SimulationEvents.BlockedBuyQueue && j.Date == sessions[5], result.Journal);
+        Assert.AreEqual(sessions[7], result.Trades.Single().Date);
+        Assert.AreEqual(OrderStates.Filled, result.Orders.Single().State);
+
+        // Stopped at that close, it is simply waiting, with the reason.
+        var waiting = Run(ManualAtOnce(Order("buy", 1, OrderSide.Buy, sessions[5], shares: 1_000)), end: sessions[5]);
+        Assert.IsEmpty(waiting.Trades);
+        Assert.AreEqual(SimulationEvents.BlockedBuyQueue, waiting.Orders.Single().Reason);
+    }
+
+    [TestMethod]
+    public void A_waiting_order_fills_on_a_day_that_traded_freely_even_if_that_day_ended_in_a_queue()
+    {
+        // The order met the whole of session 5, not only how it ended; the one placed at 5's close met only its end.
+        AddEquities(1);
+        AddPath(1, i => i is 4 or 5 ? 0.03m : 0m, shape: (i, bar) => i is 4 or 5 ? bar with { Low = bar.Yesterday } : bar);
+        var result = Run(ManualAtOnce(
+            Order("rests", 1, OrderSide.Buy, sessions[4], shares: 1_000),
+            Order("late", 1, OrderSide.Buy, sessions[5], shares: 1_000)), end: sessions[7]);
+
+        var fills = result.Trades.Select(t => (t.OrderId, t.Date)).ToArray();
+        Assert.AreSequenceEqual(new (string?, DateOnly)[] { ("rests", sessions[5]), ("late", sessions[6]) }, fills);
+    }
+
+    [TestMethod]
+    public void A_sell_at_a_close_that_ended_in_a_sell_queue_waits()
+    {
+        AddEquities(1);
+        AddPath(1, i => i == 5 ? -0.03m : 0m, shape: (i, bar) => i == 5 ? bar with { High = bar.Yesterday } : bar);
+        var result = Run(ManualAtOnce(
+            Order("buy", 1, OrderSide.Buy, sessions[3], shares: 1_000),
+            Order("sell", 1, OrderSide.Sell, sessions[5])), end: sessions[8]);
+
+        Assert.Contains(j => j.Kind == SimulationEvents.BlockedSellQueue && j.Date == sessions[5], result.Journal);
+        Assert.AreEqual(sessions[6], result.Trades.Single(t => t.Side == OrderSide.Sell).Date);
+    }
+
+    [TestMethod]
+    public void A_stop_hit_in_a_sell_queue_sells_when_the_queue_lets_it()
+    {
+        AddEquities(1);
+        AddPath(1, i => i is 63 or 64 ? -0.03m : i < 60 ? 0.001m : 0m, shape: (i, bar) => i is 63 or 64 ? bar with { High = bar.Yesterday } : bar);
+        var result = Run(Automatic(sessions[60], AtOnce with { Positions = 1, MaxWeight = 1, RebalanceSessions = 100, StopLoss = 0.05, CooldownSessions = 100 }), end: sessions[70]);
+
+        Assert.AreEqual(sessions[60], result.Trades[0].Date);
+        var stop = result.Trades.Single(t => t.Reason == SimulationEvents.StopLoss);
+        Assert.AreEqual(sessions[65], stop.Date, "the stop was hit at 64's close, which ended in a sell queue");
+        Assert.IsEmpty(result.Holdings);
+    }
+
+    [TestMethod]
+    public void The_strategy_passes_over_a_share_that_ended_in_a_buy_queue()
+    {
+        AddEquities(1, 2);
+        AddPath(1, i => i == sessions.Count - 1 ? 0.03m : 0.01m, shape: (i, bar) => i == sessions.Count - 1 ? bar with { Low = bar.Yesterday } : bar);
+        AddPath(2, _ => 0.005m);
+        var settings = AtOnce with { Positions = 1, HoldPercentile = 1 };
+        var result = Run(Automatic(sessions[^1], settings));
+
+        Assert.AreEqual(2L, result.Holdings.Single().InsCode);
+        Assert.IsEmpty(result.Planned);
+
+        // Filled on the next session, the queue at this close does not matter.
+        var later = Run(Automatic(sessions[^1], settings with { Fill = FillPrice.NextClose, InstantSaleProceeds = false }));
+        Assert.AreEqual(1L, later.Planned.Single().InsCode);
+    }
+
+    [TestMethod]
+    public void At_the_close_a_limit_meets_the_closing_price_and_not_a_better_price_earlier_that_day()
+    {
+        // 9,500 traded during session 5, which closed at 10,000; 9,400 trades during session 7.
+        AddEquities(1);
+        AddPath(1, _ => 0m, shape: (i, bar) => i switch { 5 => bar with { Low = 9_500 }, 7 => bar with { Low = 9_400 }, _ => bar });
+        var result = Run(ManualAtOnce(
+            Order("low", 1, OrderSide.Buy, sessions[5], shares: 1_000) with { LimitPrice = 9_500 },
+            Order("exact", 1, OrderSide.Buy, sessions[5], shares: 1_000) with { LimitPrice = 10_000 }) with
+        {
+            Revisions = [new(sessions[0], AtOnce with { SlippageBps = 10 })],
+        }, end: sessions[9]);
+
+        var fills = result.Trades.ToDictionary(t => t.OrderId!);
+        Assert.AreEqual(sessions[5], fills["exact"].Date);
+        Assert.AreEqual(10_000m, fills["exact"].Price);
+        Assert.AreEqual(sessions[7], fills["low"].Date);
+        Assert.AreEqual(9_500m, fills["low"].Price);
+    }
+
+    [TestMethod]
+    public void Sale_proceeds_pay_for_a_buy_at_the_same_close_unless_the_simulation_waits_for_settlement()
+    {
+        AddEquities(1, 2);
+        AddPath(1, _ => 0m);
+        AddPath(2, _ => 0m);
+        var orders = new[]
+        {
+            Order("first", 1, OrderSide.Buy, sessions[5], shares: 9_900),
+            Order("out", 1, OrderSide.Sell, sessions[10]),
+            Order("swap", 2, OrderSide.Buy, sessions[10], shares: 9_000),
+        };
+
+        var instant = Run(ManualAtOnce(orders), end: sessions[14]);
+        Assert.AreEqual(sessions[10], instant.Trades.Single(t => t.OrderId == "swap").Date);
+
+        var settling = Run(ManualAtOnce(orders) with { Revisions = [new(sessions[0], AtOnce with { InstantSaleProceeds = false })] }, end: sessions[14]);
+        Assert.AreEqual(sessions[12], settling.Trades.Single(t => t.OrderId == "swap").Date, "T+2");
+    }
+
+    [TestMethod]
+    public void The_end_of_day_book_decides_a_queue_when_it_was_collected()
+    {
+        // By its last trade session 5 ended in a queue, but offers were left at the ceiling. Session 6 looks free by its
+        // last trade, but a bid sat at the ceiling with no offer against it.
+        AddEquities(1);
+        AddPath(1, i => i == 5 ? 0.03m : 0m, shape: (i, bar) => i == 5 ? bar with { Low = bar.Yesterday } : bar);
+        var atFive = ManualAtOnce(Order("five", 1, OrderSide.Buy, sessions[5], shares: 1_000));
+        var atSix = ManualAtOnce(Order("six", 1, OrderSide.Buy, sessions[6], shares: 1_000));
+        Assert.AreEqual(sessions[6], Run(atFive, end: sessions[8]).Trades.Single().Date, "the last trade alone says queue");
+        Assert.AreEqual(sessions[6], Run(atSix, end: sessions[8]).Trades.Single().Date);
+
+        store.UpdateSessionSnapshots(
+        [
+            new SessionSnapshot(1, sessions[5], null, null, 9_700, 10_300, new BestLimitLevel { Level = 1, BidPrice = 10_300, BidVolume = 5_000, AskPrice = 10_300, AskVolume = 1_000 }),
+            new SessionSnapshot(1, sessions[6], null, null, 9_990, 10_610, new BestLimitLevel { Level = 1, BidPrice = 10_610, BidVolume = 5_000, AskPrice = 10_620, AskVolume = 1_000 }),
+        ]);
+
+        Assert.AreEqual(sessions[5], Run(atFive, end: sessions[8]).Trades.Single().Date, "offers at the ceiling are no queue");
+        Assert.AreEqual(sessions[7], Run(atSix, end: sessions[8]).Trades.Single().Date, "an offer above the ceiling cannot trade");
+    }
+
+    [TestMethod]
+    public void A_revision_to_fills_at_once_changes_the_session_it_is_dated_and_not_the_ones_before()
+    {
+        AddEquities(1);
+        AddPath(1, _ => 0m);
+        var spec = Manual(
+            Order("before", 1, OrderSide.Buy, sessions[5], shares: 1_000),
+            Order("after", 1, OrderSide.Buy, sessions[10], shares: 1_000));
+        var result = Run(spec with { Revisions = [new(sessions[0], Plain), new(sessions[8], AtOnce)] }, end: sessions[12]);
+
+        Assert.AreSequenceEqual(new (string?, DateOnly)[] { ("before", sessions[6]), ("after", sessions[10]) }, result.Trades.Select(t => (t.OrderId, t.Date)).ToArray());
+
+        // And back: from the revision on, orders wait for the next session again.
+        var back = Run(spec with { Revisions = [new(sessions[0], AtOnce), new(sessions[8], Plain)] }, end: sessions[12]);
+        Assert.AreSequenceEqual(new (string?, DateOnly)[] { ("before", sessions[5]), ("after", sessions[11]) }, back.Trades.Select(t => (t.OrderId, t.Date)).ToArray());
+    }
+
+    [TestMethod]
+    public void Comparisons_stay_the_same_whichever_way_orders_fill()
+    {
+        // The average share compounds once a session, though a session done at once is valued twice.
+        var codes = Enumerable.Range(1, 25).Select(i => (long)i).ToArray();
+        AddEquities(codes);
+        foreach (var ins in codes)
+            AddPath(ins, i => (ins + i) % 2 == 0 ? 0.01m : -0.005m);
+
+        var next = Run(Automatic(sessions[30], Plain with { Positions = 3 }));
+        var once = Run(Automatic(sessions[30], AtOnce with { Positions = 3 }));
+        Assert.AreSequenceEqual(next.Equity.Select(p => (p.Date, p.EqualWeight)).ToArray(), once.Equity.Select(p => (p.Date, p.EqualWeight)).ToArray());
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private SimulationResult Run(SimulationSpec spec, DateOnly? end = null) => simulator.Run(end is null ? spec : spec with { End = end });
@@ -341,6 +554,8 @@ public sealed class SimulationTests
         Revisions = [new(sessions[0], Plain)],
         Orders = orders,
     };
+
+    private SimulationSpec ManualAtOnce(params ManualOrder[] orders) => Manual(orders) with { Revisions = [new(sessions[0], AtOnce)] };
 
     private static SimulationSpec Automatic(DateOnly start, SimulationSettings settings) => new()
     {

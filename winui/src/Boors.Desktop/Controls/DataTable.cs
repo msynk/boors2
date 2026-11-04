@@ -462,7 +462,10 @@ public sealed partial class DataTable : UserControl
                 if (column.Numeric)
                 {
                     text.FlowDirection = FlowDirection.LeftToRight;
-                    text.TextAlignment = owner.FlowDirection == FlowDirection.RightToLeft ? TextAlignment.Left : TextAlignment.Right;
+
+                    // Not owner.FlowDirection: it is inherited, and a header built before the table joins the tree (a
+                    // page constructor setting Columns) would still read left to right and align away from its values.
+                    text.TextAlignment = Loc.Flow == FlowDirection.RightToLeft ? TextAlignment.Left : TextAlignment.Right;
                     Typography.SetNumeralAlignment(text, FontNumeralAlignment.Tabular);
                 }
 

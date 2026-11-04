@@ -50,7 +50,7 @@
 
         <StackPanel Grid.Row="1" Spacing="4">
             <TextBlock Style="{StaticResource MutedTextStyle}" TextWrapping="WrapWholeWords"
-                       Text="{l:L K='Each simulation is a paper portfolio replayed session by session from its start date and followed every day as new sessions arrive. Orders are decided at a close and fill on the next session, never in a buy queue (to buy) or a sell queue (to sell), with the real costs and T+2 settlement.'}" />
+                       Text="{l:L K='Each simulation is a paper portfolio replayed session by session from its start date and followed every day as new sessions arrive. Orders are done at once at the closing price, with the real costs; an order waits only when the market could not have taken it: a share queued against it at the close, halted or not traded.'}" />
             <InfoBar Severity="Error" IsClosable="True" Title="{l:L K='Could not replay the simulations'}"
                      IsOpen="{x:Bind l:Bools.HasText(ViewModel.Error), Mode=OneWay}" Message="{x:Bind ViewModel.Error, Mode=OneWay}" />
         </StackPanel>

@@ -96,7 +96,7 @@ public sealed partial class SimulationEditorPage : Page
         StartPicker.IsEnabled = CapitalBox.IsEnabled = isNew || restart;
         ManualStrategyNote.Visibility = Ui.Show(ViewModel.Mode == SimulationText.Manual);
         StartNote.Text = ViewModel.Mode == SimulationText.Manual
-            ? Loc.T("A manual portfolio starts with cash on its start date; your orders can fill from the session after the latest one.")
+            ? Loc.T("A manual portfolio starts with cash on its start date; your orders are done at the latest session's close, or on the next session if your parameters say so.")
             : Loc.T("A start in the past replays the strategy up to the latest session (using only what was known at each close), then it keeps following the market. The latest session starts it today.");
         syncing = false;
     }

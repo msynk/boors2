@@ -41,6 +41,7 @@ if (cli.Positional.Count == 0 || cli.Has("help"))
                                                  Read-side analytics over the store (what the workstation pages show).
           simulate [tune] [--preset balanced|adaptive|trend|value|flow|swing] [--start yyyy-MM-dd] [--capital rials]
                    [--positions N] [--rebalance N] [--min-hold N] [--hold F] [--stop F] [--trailing F] [--adaptive] [--no-regime]
+                   [--fill immediate|next-close|next-open] [--t2]
                    [--years N] [--objective return|sharpe|calmar]
                                                  Replay a strategy from a start date to the latest session (tune: parameter sweep, in/out of sample).
           rebuild                                Delete the store and rebuild it from the raw cache only (no network).

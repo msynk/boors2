@@ -112,14 +112,14 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
     [ObservableProperty] public partial double TargetVolatilityPct { get; set; }
     [ObservableProperty] public partial double MinValueBillion { get; set; } = 5;
     [ObservableProperty] public partial double MinHistorySessions { get; set; } = 120;
-    [ObservableProperty] public partial string Fill { get; set; } = "NextClose";
+    [ObservableProperty] public partial string Fill { get; set; } = "Immediate";
     [ObservableProperty] public partial double SlippageBps { get; set; } = 10;
     [ObservableProperty] public partial double ParticipationPct { get; set; } = 10;
 
     /// <summary>Brokerage per side in percent; NaN = the list rate of the rules in force.</summary>
     [ObservableProperty] public partial double BrokeragePct { get; set; } = double.NaN;
 
-    [ObservableProperty] public partial bool InstantProceeds { get; set; }
+    [ObservableProperty] public partial bool InstantProceeds { get; set; } = true;
     [ObservableProperty] public partial double CashYieldPct { get; set; } = 30;
 
     [ObservableProperty]
@@ -139,6 +139,7 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
 
     public static IReadOnlyList<Choice> FillChoices =>
     [
+        new("Immediate", Loc.T("At once, at the closing price of the session it was decided on")),
         new("NextClose", Loc.T("The next session's close (its VWAP on the main markets)")),
         new("NextOpen", Loc.T("The next session's open")),
     ];

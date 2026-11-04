@@ -37,7 +37,8 @@ this file says how to work on them.
   problem details. View models turn exceptions into a sentence (`PageViewModel.Describe`), never a crash dialog.
 - **Simulations are replays.** A simulation's results are recomputed from its definition and the data every time, so a
   change to `MarketSimulator` changes the past of every saved simulation: keep it deterministic and point-in-time
-  (decide at a close, fill on a later session), and pin each execution rule with a test in `SimulationTests`.
+  (decide with the data up to a close; a fill at that same close must be one the close allowed, never against a queue
+  the share ended in), and pin each execution rule with a test in `SimulationTests`.
   Definitions are user data in `%LOCALAPPDATA%\Boors\simulations` (`SimulationStore`), never in `market.duckdb`;
   a new parameter needs the same default in `SimulationSettings` and `SimulationSettingsDto` (a test compares them).
 

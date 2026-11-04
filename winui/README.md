@@ -18,9 +18,9 @@ Everything under `winui/` is self-contained: no project, import, props file or r
 |---|---|
 | `src/Boors.Market` | Market-data library (copied from the boilerplate): TSETMC/Codal/tgju/fipiran clients with resilience, write-once raw cache, parsers, dated rules (`rules/rules.yaml`, embedded), day-status classifier, DuckDB `MarketStore`, collectors, analytics, strategy simulations (`Simulation/`), TSETMC filter (Jint), data health |
 | `src/Boors.Market.Cli` | `boors` CLI (copied): probe, collect, rebuild, health, query, market views, cache bundles |
-| `src/Boors.Market.Tests` | 140 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports, simulations) |
+| `src/Boors.Market.Tests` | 152 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports, simulations) |
 | `src/Boors.Market.Services` | Application layer shared by node and desktop: API DTOs + source-generated JSON, the `IMarketApi` contract with **local** (in-process DuckDB) and **remote** (HTTP) implementations, the single-writer **job queue** + worker, the **Asia/Tehran scheduler**, **node sync** (bundle export/pull) |
-| `src/Boors.Market.Services.Tests` | 30 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull, simulation contract defaults and validation |
+| `src/Boors.Market.Services.Tests` | 31 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull, simulation contract defaults and validation |
 | `src/Boors.Node` | Minimal-API host of `IMarketApi` (+ GetJobs, ExportBundle, Pull), problem details, response compression, health checks, optional operator token |
 | `src/Boors.Desktop` | WinUI 3 app (MVVM, DI, x:Bind), unpackaged + self-contained Windows App SDK, x64 |
 | `rules/rules.yaml` | Dated market rules (embedded into Boors.Market) |
@@ -57,7 +57,7 @@ cd winui/src/Boors.Market.Services.Tests; dotnet test -c Release   # 30 tests
 # CLI against a data folder (copy, never move, a .boors-data folder into winui/.boors-data — it is git-ignored)
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data health
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data market overview
-dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data simulate --preset adaptive --start 2025-06-01
+dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data simulate --preset adaptive --start 2025-06-01 [--fill immediate|next-close|next-open] [--t2]
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data simulate tune --years 3 --objective sharpe
 
 # Node (http://localhost:5080); BOORS_DATA / BOORS_NODE / BOORS_OPERATOR_TOKEN override appsettings.json
@@ -134,16 +134,21 @@ DuckDB allows one process per store file: close the desktop before pointing the 
   stop, take profit and a holding limit are checked every session. Six presets (balanced, adaptive, trend, value, flow,
   swing) fill the parameters; every one stays adjustable. **Manual** mode: you place orders (an amount, shares or
   everything; an optional limit; good for N sessions; cancel while waiting) and the strategy's choices under the same
-  parameters are shown as suggestions that fill the order ticket. Execution: decided at a close and filled at the next
-  session's open or close (its VWAP on the main markets) with slippage, never in an all-day buy queue (buys) or sell
-  queue (sells) and not while halted (the order waits), at most 10% of the session's value per order, whole shares,
-  costs per side and the 0.5% sale tax from `rules.yaml`, sale proceeds usable after T+2 (or at once with broker buying
-  power), idle cash at a fixed-income yield (30% a year by default, also the Sharpe hurdle — beating zero in rials
+  parameters are shown as suggestions that fill the order ticket. Execution: a simulation has no exchange to wait for,
+  so an order is done at once, at the closing price of the session it was decided on, with slippage. It waits only when
+  the market would not have taken it: a share that ended that session in a queue against the order (the end-of-day book
+  says so when it was collected; history has the last trade at the band and at the day's extreme, which on the book of
+  2026-11-04 caught all 242 real queues and was right 85% of the time), halted or not traded, or a limit the close did
+  not meet. A waiting order fills on a later session unless that whole day was locked against it. The strategy passes
+  over a share that closed in a buy queue (without this check, replays came out 24–52 points higher: those fills were
+  not possible). Next-session fills (open or close) and T+2 settlement stay available as parameters. At most 10% of the
+  session's value per order, whole shares, costs per side and the 0.5% sale tax from `rules.yaml`, idle cash at a
+  fixed-income yield (30% a year by default, also the Sharpe hurdle — beating zero in rials
   means little at this inflation), capital increases and dividends reinvested in the position. Parameters can change
-  while a simulation runs: a revision applies from the latest session on and never rewrites the past (or the simulation
-  is replayed from its start). The list shows value, return against TEDPIX and in dollars, deepest fall, Sharpe and new
+  while a simulation runs: a revision applies from the latest session's close on and never rewrites the sessions before it (or the
+  simulation is replayed from its start). The list shows value, return against TEDPIX and in dollars, deepest fall, Sharpe and new
   trades, and compares up to six equity curves indexed to 100 at each start; a simulation shows tiles, its value against
-  TEDPIX and the average share (in rials or dollars), its drawdown, the next session's orders, holdings, orders, trades,
+  TEDPIX and the average share (in rials or dollars), its drawdown, the waiting orders, holdings, orders, trades,
   a worded journal (every ranking, stop, regime change and blocked order), 33 statistics, returns by Jalali month, the
   factor weights in use with what was learned, and its parameters with their history; trades, holdings and daily values
   export to CSV. *Find the best parameters* runs 54 sets (positions, ranking interval, trailing stop, regime filter) over
