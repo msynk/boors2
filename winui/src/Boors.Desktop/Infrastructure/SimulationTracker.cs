@@ -62,7 +62,10 @@ public sealed class SimulationTracker(IMarketApi api, SimulationStore store, UiD
             {
                 again = false;
                 foreach (var simulation in Items.ToList())
-                    await ReplayAsync(simulation, detail: false, CancellationToken.None);
+                {
+                    if (ReferenceEquals(Find(simulation.Spec.Id), simulation))
+                        await ReplayAsync(simulation, detail: false, CancellationToken.None);
+                }
             }
             while (again);
         }
@@ -76,19 +79,25 @@ public sealed class SimulationTracker(IMarketApi api, SimulationStore store, UiD
     /// <summary>Replays one simulation and keeps its summary; failures are kept on the summary, not thrown.</summary>
     public async Task<SimulationResultDto?> ReplayAsync(SavedSimulation simulation, bool detail, CancellationToken cancellationToken)
     {
+        var spec = simulation.Spec;
         try
         {
-            var result = await api.RunSimulationAsync(new SimulationRunRequestDto(simulation.Spec, detail), cancellationToken);
-            Record(simulation, result);
+            var result = await api.RunSimulationAsync(new SimulationRunRequestDto(spec, detail), cancellationToken);
+            if (IsCurrent(simulation, spec))
+                Record(simulation, result);
             return result;
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            logger.LogWarning(e, "Simulation {Id} could not be replayed: {Message}", simulation.Spec.Id, e.Message);
-            simulation.Summary ??= new SimulationSummary();
-            simulation.Summary.Error = PageViewModel.Describe(e);
-            store.Save(simulation);
-            Raise();
+            logger.LogWarning(e, "Simulation {Id} could not be replayed: {Message}", spec.Id, e.Message);
+            if (IsCurrent(simulation, spec))
+            {
+                simulation.Summary ??= new SimulationSummary();
+                simulation.Summary.Error = PageViewModel.Describe(e);
+                store.Save(simulation);
+                Raise();
+            }
+
             if (detail)
                 throw;
             return null;
@@ -131,12 +140,16 @@ public sealed class SimulationTracker(IMarketApi api, SimulationStore store, UiD
     public void MarkSeen(SavedSimulation simulation)
     {
         var trades = simulation.Summary?.Trades ?? 0;
-        if (simulation.SeenTrades == trades)
+        if (simulation.SeenTrades == trades || !ReferenceEquals(Find(simulation.Spec.Id), simulation))
             return;
         simulation.SeenTrades = trades;
         store.Save(simulation);
         Raise();
     }
+
+    /// <summary>False when the simulation was deleted or edited while it replayed: its answer no longer belongs to anything saved.</summary>
+    private bool IsCurrent(SavedSimulation simulation, SimulationSpecDto spec) =>
+        ReferenceEquals(simulation.Spec, spec) && ReferenceEquals(Find(spec.Id), simulation);
 
     private void Record(SavedSimulation simulation, SimulationResultDto result)
     {

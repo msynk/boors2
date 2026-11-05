@@ -28,6 +28,27 @@ public sealed class SimulationApiTests
     }
 
     [TestMethod]
+    public void Only_a_sell_with_no_amount_means_everything()
+    {
+        var day = new DateOnly(2026, 1, 3);
+        ManualOrderDto Sell(decimal? value, decimal? shares) => new("o", day, 1, "S", "Sell", value, shares, null, 5, null, null);
+        Boors.Market.Simulation.ManualOrder Mapped(ManualOrderDto order) => new SimulationSpecDto
+        {
+            Capital = 1,
+            Start = day,
+            Revisions = [new(day, new SimulationSettingsDto())],
+            Orders = [order],
+        }.ToDomain().Orders.Single();
+
+        Assert.IsNull(Mapped(Sell(null, null)).Shares);
+        Assert.AreEqual(5m, Mapped(Sell(null, 5)).Shares);
+        Assert.AreEqual(0m, Mapped(Sell(null, 0)).Shares); // a ticket that rounded to nothing: never "everything"
+
+        var byValue = Assert.ThrowsExactly<MarketApiException>(() => Mapped(Sell(1_000_000, null)));
+        Assert.AreEqual(400, byValue.StatusCode);
+    }
+
+    [TestMethod]
     public void A_definition_on_the_old_defaults_moves_to_fills_at_once_and_a_chosen_open_stays()
     {
         var spec = new SimulationSpecDto
@@ -93,6 +114,8 @@ public sealed class SimulationApiTests
         Assert.IsEmpty(result.Equity);
         Assert.IsEmpty((await api.TuneSimulationAsync(new SimulationTuneRequestDto(spec, 3, "Calmar"), ct)).Rows);
 
+        Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.RunSimulationAsync(new(null!, true), ct)).StatusCode);
+        Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.TuneSimulationAsync(new(null!, 3, null!), ct)).StatusCode);
         Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.RunSimulationAsync(new(spec with { Capital = 0 }, true), ct)).StatusCode);
         Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.RunSimulationAsync(new(spec with { Revisions = [] }, true), ct)).StatusCode);
         Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.RunSimulationAsync(new(spec with { Mode = "Robot" }, true), ct)).StatusCode);

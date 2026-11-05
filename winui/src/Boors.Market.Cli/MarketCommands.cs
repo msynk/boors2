@@ -28,12 +28,16 @@ public sealed class MarketCommands(MarketAnalytics analytics, MarketWatchService
                         Pct(s.WeightedReturn), Pct(s.MedianReturn), Math.Round(s.IndividualNetFlow / Hemat, 2), s.Advancers, s.Decliners]));
                 return 0;
             case "movers":
-                var kind = Enum.TryParse<MoverKind>(cli.At(2), ignoreCase: true, out var k) ? k : MoverKind.Value;
+                var kind = cli.At(2) is null ? MoverKind.Value
+                    : Enum.TryParse<MoverKind>(cli.At(2), ignoreCase: true, out var k) && Enum.IsDefined(k) ? k
+                    : throw new ArgumentException($"Unknown movers kind '{cli.At(2)}'. Kinds: {string.Join(", ", Enum.GetNames<MoverKind>())}.");
                 Output.Table(["symbol", "status", "close", "change %", "value (B rial)", "indiv. net (B rial)"],
                     analytics.GetMovers(kind, take, session).Select(m => (IReadOnlyList<object?>)[m.Symbol, m.DayStatus, m.Close, Round(m.ChangePercent), Math.Round(m.Value / 1_000_000_000m, 1), m.IndividualNetFlow is { } n ? Math.Round(n / 1_000_000_000m, 1) : null]));
                 return 0;
             case "screen":
-                var screen = Enum.TryParse<ScreenKind>(cli.At(2), ignoreCase: true, out var s) ? s : ScreenKind.Momentum6To1;
+                var screen = cli.At(2) is null ? ScreenKind.Momentum6To1
+                    : Enum.TryParse<ScreenKind>(cli.At(2), ignoreCase: true, out var s) && Enum.IsDefined(s) ? s
+                    : throw new ArgumentException($"Unknown screen '{cli.At(2)}'. Screens: {string.Join(", ", Enum.GetNames<ScreenKind>())}.");
                 Output.Table(["rank", "symbol", "class", "sector", "score", "days"],
                     analytics.Screen(screen, take, session).Select((r, i) => (IReadOnlyList<object?>)[i + 1, r.Symbol, r.InstrumentClass, r.SectorCode, Math.Round(r.Score, 4), r.Observations]));
                 return 0;

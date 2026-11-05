@@ -177,6 +177,60 @@ public sealed class MarketAnalyticsTests
     }
 
     [TestMethod]
+    public void A_bid_at_the_ceiling_is_a_queue_even_when_the_book_lists_offers_above_the_band()
+    {
+        // Share 2's book: 500 shares bid at the ceiling of 51, the best offer at 52 is outside the band.
+        store.UpdateSessionSnapshots([new SessionSnapshot(2, D2, 5, 20, 49, 51, new BestLimitLevel { Level = 1, BidPrice = 51, BidVolume = 500, AskPrice = 52, AskVolume = 10 })]);
+
+        var o = analytics.GetOverview()!;
+        Assert.AreEqual(2, o.BuyQueues);
+        Assert.AreEqual(103_000m + 25_500m, o.BuyQueueValue);
+        var entry = new MarketWatchService(store, analytics).Query(new MarketWatchRequest()).Entries.Single(e => e.InsCode == 2);
+        Assert.AreEqual("buy", entry.Queue);
+        Assert.AreEqual(25_500m, entry.QueueValue);
+
+        // An offer inside the band can still be taken: not a queue.
+        store.UpdateSessionSnapshots([new SessionSnapshot(2, D2, 5, 20, 49, 51, new BestLimitLevel { Level = 1, BidPrice = 51, BidVolume = 500, AskPrice = 51, AskVolume = 10 })]);
+        Assert.AreEqual(1, analytics.GetOverview()!.BuyQueues);
+
+        // The mirror at the floor.
+        store.UpdateSessionSnapshots([new SessionSnapshot(2, D2, 5, 20, 49, 51, new BestLimitLevel { Level = 1, BidPrice = 48, BidVolume = 10, AskPrice = 49, AskVolume = 500 })]);
+        Assert.AreEqual(1, analytics.GetOverview()!.SellQueues);
+    }
+
+    [TestMethod]
+    public void The_first_traded_day_of_a_listing_is_not_a_return()
+    {
+        // A listing: placeholder bars at the nominal 1,000 rials, the first trade at 37,500 well inside the window, then +0.1% a day.
+        store.UpsertInstruments([new Instrument { InsCode = 9, Symbol = "NEW", Isin = "IRO1NEWW0001", Class = InstrumentClass.TseStock, SectorCode = "99", TotalShares = 1000 }], D2, "yval");
+        var firstTrade = D2.AddDays(-160);
+        var bars = new List<ClassifiedBar>();
+        for (var i = -5; i < 0; i++)
+            bars.Add(new(new DailyBar { InsCode = 9, Date = firstTrade.AddDays(i), Close = 1_000, Last = 1_000, Yesterday = 1_000 }, DayStatus.NoTrade));
+        var close = 37_500m;
+        bars.Add(new(new DailyBar { InsCode = 9, Date = firstTrade, Close = close, Last = close, Yesterday = 1_000, TradeCount = 10, Volume = 10, Value = 10 }, DayStatus.Traded));
+        for (var d = firstTrade.AddDays(1); d <= D2; d = d.AddDays(1))
+        {
+            var next = Math.Round(close * 1.001m, 4);
+            bars.Add(new(new DailyBar { InsCode = 9, Date = d, Close = next, Last = next, Yesterday = close, TradeCount = 10, Volume = 10, Value = 10 }, DayStatus.Traded));
+            close = next;
+        }
+
+        store.UpsertDailyBars(bars, "history");
+
+        var momentum = analytics.Screen(ScreenKind.Momentum6To1).Single(r => r.InsCode == 9);
+        Assert.IsLessThan(0.2, momentum.Score); // about +13%, not +3,650%
+
+        var metrics = analytics.GetInstrumentMetrics(9)!;
+        Assert.IsNull(metrics.Returns["1y"]); // before the first trade: nothing to measure from
+        Assert.AreEqual(Math.Pow(1.001, 30), 1 + metrics.Returns["1m"]!.Value, 1e-3);
+
+        // On the listing day itself it is neither the top gainer nor part of its sector's return.
+        Assert.IsNull(analytics.GetMovers(MoverKind.Gainers, 5, firstTrade).Single(m => m.InsCode == 9).ChangePercent);
+        Assert.IsNull(analytics.GetSectors(firstTrade).Single(s => s.SectorCode == "99").WeightedReturn);
+    }
+
+    [TestMethod]
     public void Search_puts_exact_symbol_first_and_primary_before_secondary()
     {
         var results = analytics.Search("الف");

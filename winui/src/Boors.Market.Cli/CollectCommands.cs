@@ -52,7 +52,7 @@ public sealed class CollectCommands(IServiceProvider services)
     /// <summary>
     /// Deletes the store and rebuilds it from the raw cache only (no network): the store is a projection of the cache.
     /// Limitation: per-day end-of-day snapshots between history fetches are not replayed; only the latest response of
-    /// each request is used.
+    /// each request is used, and a session between them comes back only if the repair job's list of that day is cached.
     /// </summary>
     public async Task<int> RebuildAsync(CliArgs cli, CancellationToken cancellationToken)
     {
@@ -180,7 +180,7 @@ public sealed class CollectCommands(IServiceProvider services)
             ?? throw new InvalidOperationException("The store has no bars. Run 'boors collect all' first.");
         var sample = Store.RunQuery($"""
             SELECT b.ins_code, i.symbol FROM daily_bar b JOIN instrument i USING (ins_code)
-            WHERE b.d = DATE '{latestSession:yyyy-MM-dd}' AND i.instrument_class IN ('tse_stock', 'ifb_stock') AND i.parent_ins_code IS NULL AND b.trade_count > 0
+            WHERE b.d = DATE '{latestSession.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}' AND i.instrument_class IN ('tse_stock', 'ifb_stock') AND i.parent_ins_code IS NULL AND b.trade_count > 0
             ORDER BY b.value DESC LIMIT {count}
             """).Rows.Select(r => (InsCode: (long)r[0]!, Symbol: (string)r[1]!)).ToList();
 
@@ -225,7 +225,7 @@ public sealed class CollectCommands(IServiceProvider services)
 
     public async Task<int> VerifyContractsAsync(CliArgs cli, CancellationToken cancellationToken)
     {
-        var baselinePath = cli.Get("baseline") ?? Path.Combine("src", "Market", "Boors.Market", "Contracts", "baseline.json");
+        var baselinePath = cli.Get("baseline") ?? Path.Combine("src", "Boors.Market", "Contracts", "baseline.json");
         var contracts = services.GetRequiredService<SourceContracts>();
         var baseline = File.Exists(baselinePath) ? SourceContracts.LoadBaseline(baselinePath) : new Dictionary<string, SortedDictionary<string, string>>();
 
@@ -298,6 +298,7 @@ public sealed class CollectCommands(IServiceProvider services)
         () => Collector.SyncIndicesAsync(history: true, policy, cancellationToken),
         () => Collector.SyncInstrumentsAsync(cli.Has("details"), cli.GetInt("max-details", 300), policy, cancellationToken),
         () => Collector.BackfillHistoryAsync(max, force: false, cli.Has("with-messages"), scope, policy, cancellationToken),
+        () => Collector.RepairMissedSessionsAsync(30, policy, cancellationToken),
         () => Collector.EndOfDayAsync(cli.Has("force"), policy, cancellationToken),
         () => Collector.SyncMessagesAsync(200, policy, cancellationToken),
         () => Collector.ResolveHaltsAsync(cli.GetInt("max-halts", 500), scope, policy, cancellationToken),

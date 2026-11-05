@@ -67,6 +67,83 @@ public sealed class FileSystemRawCacheTests
     }
 
     [TestMethod]
+    [DataRow("raw/../../evil/x.json.gz")] // beside the cache root, with a name the root is a prefix of
+    [DataRow("raw/../market.duckdb.wal")] // inside the root but outside the raw cache
+    [DataRow("raw/../latest/forged.json")]
+    public async Task A_bundle_writes_only_under_the_raw_cache(string entryName)
+    {
+        var bundle = Path.Combine(root, "bundle.zip");
+        Directory.CreateDirectory(root);
+        using (var zip = System.IO.Compression.ZipFile.Open(bundle, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            await using var writer = new StreamWriter(zip.CreateEntry(entryName).Open());
+            await writer.WriteAsync("x");
+        }
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RawCacheBundle.ImportAsync(cache, bundle, CancellationToken.None));
+        Assert.IsFalse(File.Exists(Path.GetFullPath(Path.Combine(root, entryName))));
+    }
+
+    [TestMethod]
+    public async Task Importing_again_restores_the_latest_pointers_an_interrupted_import_left_out()
+    {
+        await cache.StoreAsync(Request, Encoding.UTF8.GetBytes("body"), 200, null, T0);
+        var bundle = Path.Combine(root, "bundle.zip");
+        await RawCacheBundle.ExportAsync(cache, bundle, null, CancellationToken.None);
+
+        // A second node whose import stopped after writing the files, before refreshing the pointers.
+        var otherRoot = root + "-other";
+        try
+        {
+            var other = new FileSystemRawCache(new RawCacheOptions { Root = otherRoot, Node = "other" });
+            await RawCacheBundle.ImportAsync(other, bundle, CancellationToken.None);
+            Directory.Delete(Path.Combine(otherRoot, "latest"), recursive: true);
+            Assert.IsNull(await other.GetLatestAsync(Request));
+
+            var (imported, skipped) = await RawCacheBundle.ImportAsync(other, bundle, CancellationToken.None);
+
+            Assert.AreEqual(0, imported);
+            Assert.AreEqual(2, skipped);
+            Assert.AreEqual("body", Encoding.UTF8.GetString(await other.ReadBodyAsync((await other.GetLatestAsync(Request))!)));
+        }
+        finally
+        {
+            if (Directory.Exists(otherRoot))
+                Directory.Delete(otherRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task A_bad_sidecar_is_left_out_and_the_rest_of_the_bundle_imports()
+    {
+        await cache.StoreAsync(Request, Encoding.UTF8.GetBytes("body"), 200, null, T0);
+        var bundle = Path.Combine(root, "bundle.zip");
+        await RawCacheBundle.ExportAsync(cache, bundle, null, CancellationToken.None);
+        using (var zip = System.IO.Compression.ZipFile.Open(bundle, System.IO.Compression.ZipArchiveMode.Update))
+        {
+            await using var writer = new StreamWriter(zip.CreateEntry("raw/tsetmc/x/2026/10/17/bad.json.meta.json").Open());
+            await writer.WriteAsync("{ not json");
+        }
+
+        var otherRoot = root + "-other";
+        try
+        {
+            var other = new FileSystemRawCache(new RawCacheOptions { Root = otherRoot, Node = "other" });
+            var (imported, skipped) = await RawCacheBundle.ImportAsync(other, bundle, CancellationToken.None);
+
+            Assert.AreEqual(2, imported);
+            Assert.AreEqual(1, skipped);
+            Assert.IsNotNull(await other.GetLatestAsync(Request));
+            Assert.IsEmpty(Directory.EnumerateFiles(otherRoot, "*.tmp", SearchOption.AllDirectories).ToList());
+        }
+        finally
+        {
+            if (Directory.Exists(otherRoot))
+                Directory.Delete(otherRoot, recursive: true);
+        }
+    }
+
+    [TestMethod]
     public async Task Same_millisecond_writes_do_not_overwrite_each_other()
     {
         var a = await cache.StoreAsync(Request, Encoding.UTF8.GetBytes("a"), 200, null, T0);

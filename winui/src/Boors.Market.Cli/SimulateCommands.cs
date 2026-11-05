@@ -34,9 +34,9 @@ public sealed class SimulateCommands(MarketSimulator simulator)
             InstantSaleProceeds = settings.InstantSaleProceeds && !cli.Has("t2"),
         };
         var capital = decimal.TryParse(cli.Get("capital"), NumberStyles.Number, CultureInfo.InvariantCulture, out var c) ? c : 10_000_000_000m;
-        var start = DateOnly.TryParseExact(cli.Get("start"), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var s)
-            ? s
-            : DateOnly.FromDateTime(DateTime.Today).AddYears(-1);
+        var start = cli.Get("start") is not { } startText ? DateOnly.FromDateTime(DateTime.Today).AddYears(-1)
+            : DateOnly.TryParseExact(startText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var s) ? s
+            : throw new ArgumentException($"Invalid start date '{startText}' (expected yyyy-MM-dd).");
         var spec = new SimulationSpec { Id = "cli", Capital = capital, Start = start, Revisions = [new SettingsRevision(start, settings)] };
 
         if (cli.At(1) == "tune")

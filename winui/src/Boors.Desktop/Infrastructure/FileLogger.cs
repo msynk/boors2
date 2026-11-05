@@ -31,7 +31,20 @@ public sealed class FileLoggerProvider : ILoggerProvider
         writer.Join(TimeSpan.FromSeconds(2));
     }
 
-    private void Enqueue(string line) => lines.TryAdd(line);
+    private void Enqueue(string line)
+    {
+        // Something can still log while the host shuts down.
+        if (!lines.IsAddingCompleted)
+        {
+            try
+            {
+                lines.TryAdd(line);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+    }
 
     private void Drain()
     {
@@ -41,7 +54,7 @@ public sealed class FileLoggerProvider : ILoggerProvider
             {
                 File.AppendAllText(Path.Combine(directory, $"desktop-{DateTime.UtcNow:yyyyMMdd}.jsonl"), line + "\n", Encoding.UTF8);
             }
-            catch (IOException)
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
             }
         }

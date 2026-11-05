@@ -13,8 +13,10 @@ public static class SimulationMapping
     {
         if (dto.Capital <= 0)
             throw MarketApiException.BadRequest("A simulation needs a positive starting capital.");
-        if (dto.Revisions.Count == 0)
+        if (dto.Revisions is not { Count: > 0 })
             throw MarketApiException.BadRequest("A simulation needs at least one set of parameters.");
+        if (dto.Orders?.FirstOrDefault(o => o.Value is not null && o.Shares is null && Parse<OrderSide>(o.Side, "side") == OrderSide.Sell) is { } sellByValue)
+            throw MarketApiException.BadRequest($"Sell order '{sellByValue.Id}' gives a value: a sell takes a number of shares, or neither for everything.");
 
         return new SimulationSpec
         {
@@ -24,14 +26,15 @@ public static class SimulationMapping
             Start = dto.Start,
             End = dto.End,
             Revisions = [.. dto.Revisions.OrderBy(r => r.From).Select(r => new SettingsRevision(r.From, r.Settings.ToDomain()))],
-            Orders = [.. dto.Orders.Select(o => new ManualOrder
+            Orders = [.. (dto.Orders ?? []).Select(o => new ManualOrder
             {
                 Id = o.Id,
                 PlacedOn = o.PlacedOn,
                 InsCode = o.InsCode,
                 Side = Parse<OrderSide>(o.Side, "side"),
                 Value = o.Value is > 0 ? o.Value : null,
-                Shares = o.Shares is > 0 ? o.Shares : null,
+                // Only a sell with no amount means "everything": zero shares stays a sell of nothing.
+                Shares = o.Shares is > 0 || Parse<OrderSide>(o.Side, "side") == OrderSide.Sell ? o.Shares : null,
                 LimitPrice = o.LimitPrice is > 0 ? o.LimitPrice : null,
                 GoodForSessions = Math.Clamp(o.GoodForSessions, 1, 60),
                 CancelledOn = o.CancelledOn,

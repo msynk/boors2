@@ -789,7 +789,8 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
                 var stock = chosen[k];
                 var goal = investable * (decimal)weights[k];
                 var close = Close(stock, t);
-                if (goal <= 0 || close <= 0)
+                // A goal of nothing (risk off at 0% exposure) still sells what is held: only a new position needs a goal.
+                if (close <= 0 || goal <= 0 && !positions.ContainsKey(stock))
                     continue;
                 ranking.Ranks.TryGetValue(stock, out var r);
                 var rank = ranking.Ranks.ContainsKey(stock) ? r.Rank : (int?)null;
@@ -802,7 +803,7 @@ public sealed class MarketSimulator(MarketStore store, MarketRules rules)
 
                 var now = p.Shares * close;
                 var gap = goal - now;
-                if (Math.Abs(gap) <= band * goal || !ranking.Ranks.ContainsKey(stock))
+                if (Math.Abs(gap) <= band * goal || !ranking.Ranks.ContainsKey(stock) || gap > 0 && settings.Excluded.Contains(panel.Stocks[stock].InsCode))
                     continue;
                 orders.Add(gap > 0
                     ? new Pending { Stock = stock, Side = OrderSide.Buy, Value = gap, First = first, Last = t + settings.RebalanceSessions, Reason = SimulationEvents.Resize, Rank = rank, Score = score }

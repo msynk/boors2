@@ -104,8 +104,9 @@ public sealed class FileSystemRawCache(RawCacheOptions options) : IRawCache
         };
 
         var metaPath = Path.Combine(Root, Path.ChangeExtension(bodyRelativePath, null) + ".meta.json");
-        await using (var meta = new FileStream(metaPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+        await using (var meta = new FileStream(metaPath + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None))
             await JsonSerializer.SerializeAsync(meta, entry, JsonOptions, cancellationToken);
+        File.Move(metaPath + ".tmp", metaPath);
 
         if (entry.IsSuccess)
             await WriteLatestPointerAsync(request, entry, cancellationToken);

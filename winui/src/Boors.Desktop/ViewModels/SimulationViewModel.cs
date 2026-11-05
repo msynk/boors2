@@ -123,12 +123,16 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
             Id = id;
             Result = null;
             HasData = false;
+            ClearReplay();
             ResetTicket();
         }
 
         Saved = tracker.Find(id);
         if (Saved is null)
         {
+            Result = null;
+            ClearReplay();
+            Title = Subtitle = string.Empty;
             Error = Loc.T("This simulation no longer exists.");
             return;
         }
@@ -144,6 +148,25 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
     }
 
     public override void Refresh() => Build();
+
+    /// <summary>Empties what the last replay showed: until its own replay answers, a simulation shows nothing of another one.</summary>
+    private void ClearReplay()
+    {
+        Kpis = [];
+        Holdings = [];
+        Trades = [];
+        Journal = [];
+        Recent = [];
+        Planned = [];
+        Suggestions = [];
+        Orders = [];
+        Factors = [];
+        Stats = [];
+        Months = [];
+        Notice = null;
+        NextText = string.Empty;
+        BuildCharts();
+    }
 
     public void SetDenomination(string key)
     {
@@ -475,10 +498,22 @@ public sealed partial class SimulationViewModel(IMarketApi api, SimulationTracke
             return false;
         }
 
+        if (TicketAmount >= SimulationEditorViewModel.MaxAmount || TicketLimit >= SimulationEditorViewModel.MaxAmount)
+        {
+            TicketMessage = Loc.T("That amount is too large.");
+            return false;
+        }
+
         var amount = double.IsFinite(TicketAmount) ? (decimal)TicketAmount : 0;
         if (TicketUnit != "all" && amount <= 0)
         {
             TicketMessage = Loc.T("Enter an amount greater than zero.");
+            return false;
+        }
+
+        if (TicketUnit == "shares" && Math.Floor(amount) < 1)
+        {
+            TicketMessage = Loc.T("Enter at least one whole share.");
             return false;
         }
 

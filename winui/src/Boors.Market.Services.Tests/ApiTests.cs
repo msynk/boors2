@@ -48,6 +48,22 @@ public sealed class ApiTests
         Assert.AreEqual(404, notFound.StatusCode);
         var badDate = Assert.ThrowsExactly<MarketApiException>(() => api.GetSectorsAsync("17-10-2026", ct));
         Assert.AreEqual(400, badDate.StatusCode);
+
+        // A number that names no member of the enum is as unknown as a wrong word.
+        Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.GetMoversAsync("99", 0, null, ct)).StatusCode);
+        Assert.AreEqual(400, Assert.ThrowsExactly<MarketApiException>(() => api.GetScreenAsync("99", 0, ct)).StatusCode);
+
+        // Every instrument route answers 404 for an instrument the store does not know.
+        foreach (var call in new Func<Task>[]
+        {
+            () => api.GetBarsAsync(1, null, ct),
+            () => api.GetFlowsAsync(1, null, ct),
+            () => api.GetEventsAsync(1, ct),
+            () => api.GetShareholdersAsync(1, ct),
+        })
+        {
+            Assert.AreEqual(404, (await Assert.ThrowsExactlyAsync<MarketApiException>(call)).StatusCode);
+        }
         var badJob = Assert.ThrowsExactly<MarketApiException>(() => api.RunJobAsync("nope", ct));
         Assert.AreEqual(400, badJob.StatusCode);
     }
@@ -167,6 +183,28 @@ public sealed class ApiTests
         var again = await sync.PullAsync(new Uri("http://iran-1:5080/"), null, null, host.Services.GetRequiredService<MarketCollector>(), ct);
         Assert.HasCount(1, again);
         Assert.AreEqual(0, again[0].Items);
+
+        // Unless a replay was cut short: the next pull finishes it, even with nothing new to import.
+        var pending = Path.Combine(root, "sync", "replay-pending");
+        await File.WriteAllTextAsync(pending, "http://iran-1:5080/", ct);
+        var resumed = await sync.PullAsync(new Uri("http://iran-1:5080/"), null, null, host.Services.GetRequiredService<MarketCollector>(), ct);
+        Assert.IsGreaterThan(1, resumed.Count);
+        Assert.IsFalse(File.Exists(pending));
+    }
+
+    [TestMethod]
+    public async Task A_read_the_caller_moved_on_from_never_answers()
+    {
+        var (host, _) = LocalHost();
+        using var _ = host;
+        var api = host.Services.GetRequiredService<IMarketApi>();
+        using var cancellation = new CancellationTokenSource();
+
+        var read = api.GetSectorsAsync(null, cancellation.Token);
+        cancellation.Cancel();
+
+        // Started or not, a superseded read must not hand its late answer to a page that already shows a newer one.
+        await Assert.ThrowsAsync<OperationCanceledException>(() => read);
     }
 
     private static HttpResponseMessage Json(HttpStatusCode status, string json) =>

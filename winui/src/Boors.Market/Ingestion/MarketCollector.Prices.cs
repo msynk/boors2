@@ -82,13 +82,21 @@ public sealed partial class MarketCollector
             var snapshot = await tsetmc.GetMarketWatchAsync(new MarketWatchQuery(), policy, cancellationToken);
             var sessionDate = await DetermineSessionDateAsync(snapshot, policy, cancellationToken);
             if (sessionDate is null)
-                return (0, 0, "skipped: nothing traded in the snapshot (market closed)");
+            {
+                return policy != CachePolicy.CacheOnly && snapshot.Rows.Any(r => r.TradeCount > 0)
+                    ? (0, 1, "session date unknown: the closing-price lookups failed, so the snapshot was not stored")
+                    : (0, 0, "skipped: nothing traded in the snapshot (market closed)");
+            }
+
+            if (policy == CachePolicy.CacheOnly && await SnapshotIsOfNewerSessionAsync(sessionDate.Value, cancellationToken))
+                return (0, 0, $"skipped: the cached snapshot was taken during a session after {sessionDate:yyyy-MM-dd}, whose date the cache cannot confirm");
 
             UpsertFromMarketWatch(snapshot, today);
             var instruments = store.GetInstruments().ToDictionary(i => i.InsCode);
             var recent = store.GetRecentBars(10);
             var calendar = LoadCalendar();
             var failures = 0;
+            var missedSession = MissedSessionBefore(sessionDate.Value, recent);
 
             // Bars, classified against the last stored days of each instrument.
             var newBars = new List<ClassifiedBar>();
@@ -115,7 +123,7 @@ public sealed partial class MarketCollector
                 var instrumentClass = instruments.TryGetValue(row.InsCode, out var instrument) ? instrument.Class : row.Class;
                 var (classified, corporateAction) = ClassifySessionBar(bar, history, instrumentClass, calendar);
                 newBars.Add(classified);
-                if (corporateAction is not null)
+                if (corporateAction is not null && !missedSession)
                     corporateActions.Add(corporateAction);
             }
 
@@ -381,6 +389,38 @@ public sealed partial class MarketCollector
 
         if (current is { Count: > 0 })
             yield return (current[0], current);
+    }
+
+    /// <summary>
+    /// True when a trading day without any bar lies between the last stored session and <paramref name="session"/>. The
+    /// session's reference prices then carry that day's move, so comparing them with the last stored close would call
+    /// nearly every traded share a corporate action. The repair job fills the day and checks it properly.
+    /// </summary>
+    private bool MissedSessionBefore(DateOnly session, IReadOnlyDictionary<long, IReadOnlyList<StoredBar>> recent)
+    {
+        var earlier = recent.Values.SelectMany(bars => bars).Select(b => b.Bar.Date).Where(d => d < session).ToList();
+        if (earlier.Count == 0)
+            return false;
+
+        var closures = store.GetClosureDays().ToHashSet();
+        return EachDay(earlier.Max().AddDays(1), session.AddDays(-1)).Any(d => DataHealthService.IsTradingDay(d, closures));
+    }
+
+    /// <summary>
+    /// A replay dates the latest snapshot from the closing-price responses in the cache, but those are older than a
+    /// snapshot another job took during a later session (the instruments job catching up mid-morning). Its partial
+    /// prices must not replace the bars of the session the older responses name.
+    /// </summary>
+    private async Task<bool> SnapshotIsOfNewerSessionAsync(DateOnly session, CancellationToken cancellationToken)
+    {
+        if (await rawCache.GetLatestAsync(tsetmc.Endpoints.MarketWatch(new MarketWatchQuery()), cancellationToken) is not { } entry)
+            return false;
+
+        var fetched = entry.FetchedAtUtc.ToOffset(IranTime.Zone.GetUtcOffset(entry.FetchedAtUtc));
+        var day = DateOnly.FromDateTime(fetched.DateTime);
+        return day > session
+            && DataHealthService.IsTradingDay(day, store.GetClosureDays().ToHashSet())
+            && TimeOnly.FromDateTime(fetched.DateTime) >= rules.GetSession(InstrumentClass.TseStock, day).Value.ContinuousStart;
     }
 
     /// <summary>The trading date of a market-watch snapshot: the latest last-trade date among the most-traded instruments.</summary>

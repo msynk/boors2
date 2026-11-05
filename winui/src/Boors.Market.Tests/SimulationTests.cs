@@ -195,6 +195,58 @@ public sealed class SimulationTests
     }
 
     [TestMethod]
+    public void Risk_off_at_no_exposure_sells_the_holdings()
+    {
+        sessions = Weekdays(sessions[0], 160);
+        AddEquities(1);
+        AddPath(1, _ => 0.001m);
+        // TEDPIX climbs, then falls below its 30-session average from session 100.
+        store.UpsertIndexBars(sessions.Select((d, i) => new IndexBar { InsCode = Boors.Market.Sources.Tsetmc.TsetmcEndpoints.TedpixInsCode, Date = d, Close = i < 100 ? 1_000 + i : 500 - i, Low = 1, High = 2_000 }), "history");
+        var settings = AtOnce with { Positions = 1, MaxWeight = 1, RebalanceSessions = 5, RegimeFilter = true, RegimeSessions = 30, DefensiveExposure = 0 };
+
+        var result = Run(Automatic(sessions[60], settings));
+
+        Assert.Contains(t => t.Side == OrderSide.Buy && t.Date < sessions[100], result.Trades); // invested while TEDPIX rose
+        Assert.Contains(t => t.Side == OrderSide.Sell && t.Date >= sessions[100], result.Trades); // exposure 0 means selling
+        Assert.IsEmpty(result.Holdings);
+    }
+
+    [TestMethod]
+    public void A_share_excluded_while_held_is_never_bought_more()
+    {
+        sessions = Weekdays(sessions[0], 160);
+        AddEquities(1, 2);
+        // Share 1 falls, so a rebalance would top it up; share 2 rises so it takes the first place in the ranking.
+        AddPath(1, _ => -0.002m);
+        AddPath(2, _ => 0.002m);
+        var settings = AtOnce with { Positions = 2, MaxWeight = 1, RebalanceSessions = 5, RebalanceBand = 0, HoldPercentile = 1, Sizing = SizingMethod.Equal };
+        var excludedFrom = sessions[100];
+        var spec = Automatic(sessions[60], settings) with
+        {
+            Revisions = [new(sessions[60], settings), new(excludedFrom, settings with { Excluded = new HashSet<long> { 1 } })],
+        };
+
+        var result = Run(spec);
+
+        Assert.Contains(t => t.InsCode == 1 && t.Side == OrderSide.Buy && t.Date < excludedFrom, result.Trades); // bought before its exclusion
+        Assert.DoesNotContain(t => t.InsCode == 1 && t.Side == OrderSide.Buy && t.Date >= excludedFrom, result.Trades);
+    }
+
+    [TestMethod]
+    public void A_sell_of_zero_shares_sells_nothing()
+    {
+        AddEquities(1);
+        AddPath(1, _ => 0m);
+
+        var result = Run(ManualAtOnce(
+            Order("buy", 1, OrderSide.Buy, sessions[5], value: 50_000_000),
+            Order("nothing", 1, OrderSide.Sell, sessions[10], shares: 0m)));
+
+        Assert.AreEqual(5_000m, result.Holdings.Single().Shares);
+        Assert.DoesNotContain(t => t.Side == OrderSide.Sell, result.Trades);
+    }
+
+    [TestMethod]
     public void An_order_cancelled_before_its_session_never_fills_and_an_expired_one_says_so()
     {
         // Share 2 keeps trading, so the days share 1 is halted are still market sessions.

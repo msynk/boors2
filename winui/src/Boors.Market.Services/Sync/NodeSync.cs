@@ -22,6 +22,9 @@ public sealed class NodeSync(
 
     public const string BundleRoute = "api/v1/Sync/ExportBundle";
 
+    /// <summary>How long a bundle download may go without receiving anything before the pull fails.</summary>
+    private static readonly TimeSpan StallTimeout = TimeSpan.FromMinutes(2);
+
     private FileSystemRawCache Cache => rawCache as FileSystemRawCache
         ?? throw new InvalidOperationException("Node sync needs the file-system raw cache.");
 
@@ -44,11 +47,12 @@ public sealed class NodeSync(
     {
         var directory = Path.Combine(Path.GetFullPath(options.Value.DataRoot), "sync", "in");
         Directory.CreateDirectory(directory);
-        var bundle = Path.Combine(directory, $"pull-{nodeUrl.Host}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip");
+        var bundle = Path.Combine(directory, $"pull-{string.Concat(nodeUrl.Host.Select(c => char.IsLetterOrDigit(c) ? c : '_'))}-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.zip");
+        var pendingReplay = Path.Combine(Path.GetFullPath(options.Value.DataRoot), "sync", "replay-pending");
         var started = DateTimeOffset.UtcNow;
         try
         {
-            var query = since is { } s ? $"?since={s:yyyy-MM-dd}" : string.Empty;
+            var query = since is { } s ? $"?since={s.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}" : string.Empty;
             using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(nodeUrl, BundleRoute + query));
             if (!string.IsNullOrWhiteSpace(operatorToken))
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", operatorToken);
@@ -64,9 +68,14 @@ public sealed class NodeSync(
             {
                 var buffer = new byte[1 << 16];
                 long copied = 0, reported = 0;
-                int read;
-                while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                while (true)
                 {
+                    using var stalled = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    stalled.CancelAfter(StallTimeout);
+                    var read = await source.ReadAsync(buffer, stalled.Token);
+                    if (read == 0)
+                        break;
+
                     await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     copied += read;
                     if (copied - reported >= 4 << 20)
@@ -82,13 +91,17 @@ public sealed class NodeSync(
             var pulled = new CollectionResult(MarketJobs.Sync, "ok", imported, 0, $"{imported} file(s) imported, {skipped} already present from {nodeUrl}");
             await RecordAsync(nodeUrl, started, imported, skipped);
 
-            if (imported == 0)
+            // A replay that was cancelled or cut short by a crash is done by the next pull, even with nothing new to import.
+            if (imported == 0 && !File.Exists(pendingReplay))
                 return [pulled];
 
+            await File.WriteAllTextAsync(pendingReplay, nodeUrl.ToString(), CancellationToken.None);
             logger.LogInformation("Replaying the raw cache into the store ({Imported} new file(s))", imported);
-            return [pulled, .. await MarketJobs.ReloadFromCacheAsync(collector, cancellationToken)];
+            var replayed = await MarketJobs.ReloadFromCacheAsync(collector, cancellationToken);
+            TryDelete(pendingReplay);
+            return [pulled, .. replayed];
         }
-        catch (Exception e) when (e is HttpRequestException or InvalidDataException or IOException || (e is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        catch (Exception e) when (e is HttpRequestException or InvalidDataException or IOException || (e is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             logger.LogWarning("Pull from {Node} failed: {Message}", nodeUrl, e.Message);
             return [new CollectionResult(MarketJobs.Sync, "failed", 0, 1, $"{nodeUrl}: {e.Message}")];

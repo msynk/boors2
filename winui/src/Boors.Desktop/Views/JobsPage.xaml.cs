@@ -381,7 +381,10 @@ public sealed partial class JobsPage : Page, IReloadable
     private void OnAutoDownload(object sender, RoutedEventArgs e)
     {
         if (!loading)
+        {
             settings.Update(s => s.AutoDownload = AutoDownloadSwitch.IsOn);
+            Reload();
+        }
     }
 
     private void OnNoticeClosed(InfoBar sender, InfoBarClosedEventArgs args) => ViewModel.Notice = null;

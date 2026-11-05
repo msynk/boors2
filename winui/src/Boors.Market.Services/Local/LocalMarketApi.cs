@@ -52,7 +52,7 @@ public sealed class LocalMarketApi(
 
     public Task<List<MoverDto>> GetMoversAsync(string kind, int take, string? date, CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<MoverKind>(kind, ignoreCase: true, out var moverKind))
+        if (!Enum.TryParse<MoverKind>(kind, ignoreCase: true, out var moverKind) || !Enum.IsDefined(moverKind))
             throw MarketApiException.BadRequest($"Unknown movers kind '{kind}'.");
 
         var session = ParseDate(date);
@@ -61,7 +61,7 @@ public sealed class LocalMarketApi(
 
     public Task<List<ScreenRowDto>> GetScreenAsync(string kind, int take, CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<ScreenKind>(kind, ignoreCase: true, out var screenKind))
+        if (!Enum.TryParse<ScreenKind>(kind, ignoreCase: true, out var screenKind) || !Enum.IsDefined(screenKind))
             throw MarketApiException.BadRequest($"Unknown screen '{kind}'.");
 
         return Run(() => Analytics.Screen(screenKind, Take(take)).Select(r => r.ToDto()).ToList(), cancellationToken);
@@ -121,6 +121,7 @@ public sealed class LocalMarketApi(
         return Run(() =>
         {
             // Adjust over the full history (point-in-time as of the last bar), then cut to the requested window.
+            RequireInstrument(insCode);
             var bars = Store.GetDailyBars(insCode);
             if (bars.Count == 0)
                 return new List<BarDto>();
@@ -137,16 +138,21 @@ public sealed class LocalMarketApi(
     public Task<List<FlowDayDto>> GetFlowsAsync(long insCode, string? from, CancellationToken cancellationToken)
     {
         var start = ParseDate(from) ?? DateOnly.MinValue;
-        return Run(() => Store.GetClientTypes(insCode)
-            .Where(f => f.Date >= start)
-            .Select(f => new FlowDayDto(f.Date, f.BuyIndividualValue, f.SellIndividualValue, f.BuyInstitutionalValue, f.SellInstitutionalValue,
-                f.BuyIndividualCount, f.SellIndividualCount, f.IndividualNetValue, f.PerCapitaBuy, f.PerCapitaSell, f.BuyerPower, f.ValuesEstimated))
-            .ToList(), cancellationToken);
+        return Run(() =>
+        {
+            RequireInstrument(insCode);
+            return Store.GetClientTypes(insCode)
+                .Where(f => f.Date >= start)
+                .Select(f => new FlowDayDto(f.Date, f.BuyIndividualValue, f.SellIndividualValue, f.BuyInstitutionalValue, f.SellInstitutionalValue,
+                    f.BuyIndividualCount, f.SellIndividualCount, f.IndividualNetValue, f.PerCapitaBuy, f.PerCapitaSell, f.BuyerPower, f.ValuesEstimated))
+                .ToList();
+        }, cancellationToken);
     }
 
     public Task<List<CorporateEventDto>> GetEventsAsync(long insCode, CancellationToken cancellationToken) =>
         Run(() =>
         {
+            RequireInstrument(insCode);
             var adjustments = new[] { "implied", "published" }
                 .SelectMany(source => Store.GetPriceAdjustments(insCode, source)
                     .Select(a => new CorporateEventDto(a.Date, "adjustment", source, a.Factor, null, null)));
@@ -158,6 +164,7 @@ public sealed class LocalMarketApi(
     public Task<List<ShareholderDto>> GetShareholdersAsync(long insCode, CancellationToken cancellationToken) =>
         Task.Run(async () =>
         {
+            RequireInstrument(insCode);
             var now = IranTime.Now(timeProvider);
             var today = new DateOnly(now.Year, now.Month, now.Day);
             var holders = Store.GetLatestShareholders(insCode);
@@ -172,7 +179,7 @@ public sealed class LocalMarketApi(
                     Store.UpsertShareholders(fresh);
                     holders = Store.GetLatestShareholders(insCode);
                 }
-                catch (Exception e) when (e is SourceRequestException or HttpRequestException or Polly.ExecutionRejectedException
+                catch (Exception e) when (e is SourceRequestException or HttpRequestException or Polly.ExecutionRejectedException or JsonException
                     || (e is OperationCanceledException && !cancellationToken.IsCancellationRequested))
                 {
                     // Serve the last snapshot we have; the page shows its date.
@@ -202,13 +209,21 @@ public sealed class LocalMarketApi(
 
         var window = ParseWindow(period, asOf, from);
         var limit = Math.Clamp(take == 0 ? 50 : take, 1, 500);
-        return Run(() => Reports.GetPerformance(reportKind, window.Period, Math.Max(0, minValue), limit, window.AsOf, window.From).ToDto(), cancellationToken);
+        return Run(() =>
+        {
+            RequireStartBeforeLatest(window.AsOf, window.From);
+            return Reports.GetPerformance(reportKind, window.Period, Math.Max(0, minValue), limit, window.AsOf, window.From).ToDto();
+        }, cancellationToken);
     }
 
     public Task<SectorReturnsReportDto> GetSectorReturnsAsync(string? period, decimal minValue, string? asOf, string? from, CancellationToken cancellationToken)
     {
         var window = ParseWindow(period, asOf, from);
-        return Run(() => Reports.GetSectorReturns(window.Period, Math.Max(0, minValue), window.AsOf, window.From).ToDto(), cancellationToken);
+        return Run(() =>
+        {
+            RequireStartBeforeLatest(window.AsOf, window.From);
+            return Reports.GetSectorReturns(window.Period, Math.Max(0, minValue), window.AsOf, window.From).ToDto();
+        }, cancellationToken);
     }
 
     public Task<SignalTrackRecordDto> GetSignalTrackRecordAsync(int years, string? asOf, string? from, CancellationToken cancellationToken)
@@ -234,13 +249,13 @@ public sealed class LocalMarketApi(
 
     public Task<SimulationResultDto> RunSimulationAsync(SimulationRunRequestDto request, CancellationToken cancellationToken)
     {
-        var spec = request.Spec.ToDomain();
+        var spec = (request.Spec ?? throw MarketApiException.BadRequest("A simulation definition is required.")).ToDomain();
         return Run(() => Simulator.Run(spec, request.Detail, cancellationToken).ToDto(), cancellationToken);
     }
 
     public Task<SimulationTuningDto> TuneSimulationAsync(SimulationTuneRequestDto request, CancellationToken cancellationToken)
     {
-        var spec = request.Spec.ToDomain();
+        var spec = (request.Spec ?? throw MarketApiException.BadRequest("A simulation definition is required.")).ToDomain();
         var objective = string.IsNullOrWhiteSpace(request.Objective) ? TuningObjective.Sharpe
             : Enum.TryParse<TuningObjective>(request.Objective, ignoreCase: true, out var o) && Enum.IsDefined(o) ? o
             : throw MarketApiException.BadRequest($"Unknown objective '{request.Objective}' (expected {string.Join(", ", Enum.GetNames<TuningObjective>())}).");
@@ -303,7 +318,29 @@ public sealed class LocalMarketApi(
         return Task.FromResult(jobs.Enqueue(MarketJobRequest.Pull(uri, since, request.OperatorToken)).Id);
     }
 
-    private static Task<T> Run<T>(Func<T> work, CancellationToken cancellationToken) => Task.Run(work, cancellationToken);
+    /// <summary>
+    /// Store work on the thread pool. A read cannot stop halfway, so a caller that moved on while it ran is told so
+    /// instead of getting the late answer, which would overwrite what a newer request already showed.
+    /// </summary>
+    private static async Task<T> Run<T>(Func<T> work, CancellationToken cancellationToken)
+    {
+        var result = await Task.Run(work, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    private void RequireInstrument(long insCode)
+    {
+        if (Store.GetInstrument(insCode) is null)
+            throw MarketApiException.NotFound($"Instrument {insCode} is not in the store.");
+    }
+
+    /// <summary>With no base date the window ends on the latest session: a start on or after it is the same mistake as one after the base date.</summary>
+    private void RequireStartBeforeLatest(DateOnly? asOf, DateOnly? from)
+    {
+        if (asOf is null && from is { } start && Analytics.LatestSession() is { } latest && start >= latest)
+            throw MarketApiException.BadRequest($"The start date {start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} must be before the latest session {latest.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}.");
+    }
 
     private static int Take(int take) => Math.Clamp(take == 0 ? 20 : take, 1, 500);
 

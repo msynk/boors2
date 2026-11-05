@@ -109,7 +109,7 @@ public sealed partial class MainWindow : Window
         }
         else if (change.HasFlag(SettingsChange.DataSource))
         {
-            shell?.ReloadCurrent();
+            shell?.ReloadFromNewSource();
         }
     }
 

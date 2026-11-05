@@ -79,11 +79,37 @@ public sealed partial class ShellPage : Page
             page.Reload();
     }
 
-    // Data health reloads itself when a job finishes; every other page shows the new data now.
+    /// <summary>The data source changed: every page reads from it when it is next shown, the open one and the simulations now.</summary>
+    public void ReloadFromNewSource()
+    {
+        InvalidateHiddenPages();
+        ReloadCurrent();
+        _ = App.Get<SimulationTracker>().RefreshAsync();
+    }
+
+    // Data health reloads itself when a job finishes; every other page shows the new data now or when it is next opened.
     private void OnDataChanged(object? sender, EventArgs e)
     {
+        InvalidateHiddenPages();
         if (navigator.CurrentKey != Navigator.Health)
             ReloadCurrent();
+    }
+
+    private void InvalidateHiddenPages()
+    {
+        (string Key, PageViewModel ViewModel)[] pages =
+        [
+            (Navigator.Overview, App.Get<OverviewViewModel>()),
+            (Navigator.Watch, App.Get<MarketWatchViewModel>()),
+            (Navigator.Screens, App.Get<ScreensViewModel>()),
+            (Navigator.Reports, App.Get<ReportsViewModel>()),
+            (Navigator.Symbol, App.Get<SymbolViewModel>()),
+        ];
+        foreach (var (key, viewModel) in pages)
+        {
+            if (key != navigator.CurrentKey)
+                viewModel.Invalidate();
+        }
     }
 
     private void OnNavigated(object? sender, string key)

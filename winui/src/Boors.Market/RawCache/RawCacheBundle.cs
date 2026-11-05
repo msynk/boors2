@@ -39,7 +39,8 @@ public static class RawCacheBundle
     public static async Task<(int Imported, int Skipped)> ImportAsync(FileSystemRawCache cache, string bundlePath, CancellationToken cancellationToken)
     {
         int imported = 0, skipped = 0;
-        var newEntries = new List<RawEntry>();
+        var entries = new List<RawEntry>();
+        var rawRoot = Path.GetFullPath(Path.Combine(cache.Root, "raw")) + Path.DirectorySeparatorChar;
 
         await using (var stream = File.OpenRead(bundlePath))
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
@@ -48,32 +49,56 @@ public static class RawCacheBundle
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var target = Path.GetFullPath(Path.Combine(cache.Root, entry.FullName));
-                if (!target.StartsWith(Path.GetFullPath(cache.Root), StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException($"Bundle entry escapes the cache root: {entry.FullName}");
+                if (!target.StartsWith(rawRoot, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Bundle entry escapes the raw cache: {entry.FullName}");
 
+                var isSidecar = target.EndsWith(".meta.json", StringComparison.Ordinal);
                 if (File.Exists(target))
                 {
+                    // Known files still count for the pointers: an import cut short before them left them unset.
+                    skipped++;
+                    if (isSidecar && await ReadSidecarAsync(target, cancellationToken) is { } known)
+                        entries.Add(known);
+                    continue;
+                }
+
+                // Through a temporary name, so an interrupted import never leaves a partial file that a retry would take for a known one.
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                var partial = target + ".tmp";
+                await entry.ExtractToFileAsync(partial, overwrite: true, cancellationToken);
+                var sidecar = isSidecar ? await ReadSidecarAsync(partial, cancellationToken) : null;
+                if (isSidecar && sidecar is null)
+                {
+                    File.Delete(partial);
                     skipped++;
                     continue;
                 }
 
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                await entry.ExtractToFileAsync(target, overwrite: false, cancellationToken);
+                File.Move(partial, target);
                 imported++;
-
-                if (target.EndsWith(".meta.json", StringComparison.Ordinal))
-                {
-                    await using var meta = File.OpenRead(target);
-                    if (await JsonSerializer.DeserializeAsync<RawEntry>(meta, cancellationToken: cancellationToken) is { } rawEntry)
-                        newEntries.Add(rawEntry);
-                }
+                if (sidecar is not null)
+                    entries.Add(sidecar);
             }
         }
 
-        foreach (var rawEntry in newEntries.Where(e => e.IsSuccess).OrderBy(e => e.FetchedAtUtc))
+        foreach (var rawEntry in entries.Where(e => e.IsSuccess).OrderBy(e => e.FetchedAtUtc))
             await cache.RefreshLatestPointerAsync(rawEntry, cancellationToken);
 
         return (imported, skipped);
+    }
+
+    /// <summary>The entry a sidecar describes, or null when it does not parse (a bad file must not stop the rest of the bundle).</summary>
+    private static async Task<RawEntry?> ReadSidecarAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var meta = File.OpenRead(path);
+            return await JsonSerializer.DeserializeAsync<RawEntry>(meta, cancellationToken: cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     // raw/{source}/{endpoint}/{yyyy}/{MM}/{dd}/{file}

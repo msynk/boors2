@@ -148,8 +148,8 @@ public sealed class MarketWatchService(MarketStore store, MarketAnalytics analyt
                 AskOrders = r.GetNullableInt32("ask1_orders") ?? 0,
             };
             var queue = top is null ? null
-                : allowedHigh > 0 && top.BidPrice >= allowedHigh && top.AskVolume == 0 ? "buy"
-                : allowedLow > 0 && top.AskPrice > 0 && top.AskPrice <= allowedLow && top.BidVolume == 0 ? "sell"
+                : allowedHigh > 0 && top.BidPrice >= allowedHigh && !(top.AskVolume > 0 && top.AskPrice <= allowedHigh) ? "buy"
+                : allowedLow > 0 && top.AskPrice > 0 && top.AskPrice <= allowedLow && !(top.BidVolume > 0 && top.BidPrice >= allowedLow) ? "sell"
                 : null;
             var totalShares = r.GetNullableDecimal("total_shares") ?? 0;
             var symbol = r.GetString("symbol");

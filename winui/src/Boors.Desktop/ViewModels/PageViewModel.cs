@@ -39,6 +39,9 @@ public abstract partial class PageViewModel(IMarketApi api, ILogger logger) : Ob
     {
     }
 
+    /// <summary>What was loaded is out of date (new market data, another data source): the page loads again when it is next opened.</summary>
+    public virtual void Invalidate() => HasData = false;
+
     protected async Task RunAsync(Func<CancellationToken, Task> work, string what)
     {
         loading?.Cancel();

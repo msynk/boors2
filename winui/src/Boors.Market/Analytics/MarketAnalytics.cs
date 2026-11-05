@@ -26,6 +26,17 @@ public sealed class MarketAnalytics(MarketStore store)
              THEN CAST(b.close AS DOUBLE) / CAST(b.yesterday AS DOUBLE) - 1 END
         """;
 
+    /// <summary>A bid at the ceiling with no offer inside the band: the book can list offers above it, which nobody can take.</summary>
+    private const string BuyQueue = "b.allowed_high > 0 AND b.bid1_price >= b.allowed_high AND NOT (coalesce(b.ask1_volume, 0) > 0 AND b.ask1_price <= b.allowed_high)";
+
+    private const string SellQueue = "b.allowed_low > 0 AND b.ask1_price > 0 AND b.ask1_price <= b.allowed_low AND NOT (coalesce(b.bid1_volume, 0) > 0 AND b.bid1_price >= b.allowed_low)";
+
+    /// <summary>The first traded day of each instrument: before it TSETMC carries a placeholder at the nominal 1,000 rials.</summary>
+    private const string Listing = "listing AS (SELECT ins_code, min(d) AS listed FROM daily_bar WHERE trade_count > 0 GROUP BY ins_code)";
+
+    /// <summary>The day's return, except on the first traded day, which only shows the distance from that placeholder.</summary>
+    private const string ListedReturn = $"CASE WHEN b.d > l.listed THEN {Return} END";
+
     private static readonly long[] HeadlineIndices = [TsetmcEndpoints.TedpixInsCode, 67130298613737946];
 
     /// <summary>The most recent sessions (days on which anything traded), newest first.</summary>
@@ -49,10 +60,10 @@ public sealed class MarketAnalytics(MarketStore store)
                 count(*) FILTER (WHERE b.trade_count = 0),
                 count(*) FILTER (WHERE b.day_status = 'SymbolHalted'),
                 count(*) FILTER (WHERE b.bid1_price IS NOT NULL),
-                count(*) FILTER (WHERE b.allowed_high > 0 AND b.bid1_price >= b.allowed_high AND coalesce(b.ask1_volume, 0) = 0),
-                sum(CAST(b.bid1_volume AS DECIMAL(38,4)) * b.bid1_price) FILTER (WHERE b.allowed_high > 0 AND b.bid1_price >= b.allowed_high AND coalesce(b.ask1_volume, 0) = 0),
-                count(*) FILTER (WHERE b.allowed_low > 0 AND b.ask1_price > 0 AND b.ask1_price <= b.allowed_low AND coalesce(b.bid1_volume, 0) = 0),
-                sum(CAST(b.ask1_volume AS DECIMAL(38,4)) * b.ask1_price) FILTER (WHERE b.allowed_low > 0 AND b.ask1_price > 0 AND b.ask1_price <= b.allowed_low AND coalesce(b.bid1_volume, 0) = 0),
+                count(*) FILTER (WHERE {BuyQueue}),
+                sum(CAST(b.bid1_volume AS DECIMAL(38,4)) * b.bid1_price) FILTER (WHERE {BuyQueue}),
+                count(*) FILTER (WHERE {SellQueue}),
+                sum(CAST(b.ask1_volume AS DECIMAL(38,4)) * b.ask1_price) FILTER (WHERE {SellQueue}),
                 count(*) FILTER (WHERE b.day_status = 'QueueLockedUp'),
                 count(*) FILTER (WHERE b.day_status = 'QueueLockedDown')
             FROM daily_bar b JOIN instrument i USING (ins_code)
@@ -154,11 +165,12 @@ public sealed class MarketAnalytics(MarketStore store)
             return [];
 
         return store.Query($"""
-            WITH x AS (
+            WITH {Listing},
+            x AS (
                 SELECT i.sector_code, i.sector_name, b.ins_code, b.trade_count, b.value, b.close, b.yesterday,
-                       {Return} AS ret,
+                       {ListedReturn} AS ret,
                        CAST(b.yesterday AS DOUBLE) * CAST(i.total_shares AS DOUBLE) AS cap
-                FROM daily_bar b JOIN instrument i USING (ins_code)
+                FROM daily_bar b JOIN instrument i USING (ins_code) LEFT JOIN listing l USING (ins_code)
                 WHERE b.d = $d AND {Equity} AND i.sector_code IS NOT NULL),
             f AS (SELECT ins_code, buy_i_value - sell_i_value AS net FROM client_type_daily WHERE d = $d)
             SELECT x.sector_code, coalesce(any_value(s.name), max(x.sector_name)),
@@ -203,8 +215,9 @@ public sealed class MarketAnalytics(MarketStore store)
         };
 
         return store.Query($"""
-            SELECT b.ins_code, i.symbol, i.name, i.instrument_class, b.day_status, b.close, {Return} AS ret, b.value, c.buy_i_value - c.sell_i_value AS net
-            FROM daily_bar b JOIN instrument i USING (ins_code)
+            WITH {Listing}
+            SELECT b.ins_code, i.symbol, i.name, i.instrument_class, b.day_status, b.close, {ListedReturn} AS ret, b.value, c.buy_i_value - c.sell_i_value AS net
+            FROM daily_bar b JOIN instrument i USING (ins_code) JOIN listing l USING (ins_code)
             LEFT JOIN client_type_daily c ON c.ins_code = b.ins_code AND c.d = b.d
             WHERE b.d = $d AND {Equity} AND b.trade_count > 0
             ORDER BY {order}
@@ -242,8 +255,10 @@ public sealed class MarketAnalytics(MarketStore store)
         var priced = adjusted.Where(a => a.Return is not null || a.Status is DayStatus.Traded).ToList();
         var lastClose = adjusted[^1].AdjustedClose;
 
+        // Before its first trade a listing has only a placeholder at the nominal price: no return can start there.
+        var listed = stored.FirstOrDefault(s => s.Bar.TradeCount > 0)?.Bar.Date ?? DateOnly.MaxValue;
         decimal? CloseOnOrBefore(DateOnly date) => adjusted.LastOrDefault(a => a.Date <= date)?.AdjustedClose;
-        double? ReturnSince(DateOnly start) => CloseOnOrBefore(start) is { } c && c > 0 ? (double)(lastClose / c - 1) : null;
+        double? ReturnSince(DateOnly start) => start >= listed && CloseOnOrBefore(start) is { } c && c > 0 ? (double)(lastClose / c - 1) : null;
 
         var yearWindow = adjusted.Where(a => a.Date > asOf.AddDays(-365) && (a.Status is null or DayStatus.Traded or DayStatus.ReopenAuction or DayStatus.QueueLockedUp or DayStatus.QueueLockedDown)).ToList();
         var high = yearWindow.Count > 0 ? yearWindow.Max(a => a.AdjustedClose) : (decimal?)null;
@@ -302,7 +317,8 @@ public sealed class MarketAnalytics(MarketStore store)
         (string Sql, (string, object?)[] Parameters) query = kind switch
         {
             ScreenKind.Momentum6To1 => ($"""
-                WITH r AS (SELECT b.ins_code, {Return} AS ret FROM daily_bar b JOIN instrument i USING (ins_code)
+                WITH {Listing},
+                     r AS (SELECT b.ins_code, {ListedReturn} AS ret FROM daily_bar b JOIN instrument i USING (ins_code) JOIN listing l USING (ins_code)
                            WHERE {Equity} AND b.d > $from AND b.d <= $to)
                 SELECT ins_code, exp(sum(ln(1 + ret))) - 1, count(ret) FROM r GROUP BY ins_code HAVING count(ret) >= 60
                 """, [("from", d.AddDays(-182)), ("to", d.AddDays(-30))]),

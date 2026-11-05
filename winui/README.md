@@ -18,9 +18,9 @@ Everything under `winui/` is self-contained: no project, import, props file or r
 |---|---|
 | `src/Boors.Market` | Market-data library (copied from the boilerplate): TSETMC/Codal/tgju/fipiran clients with resilience, write-once raw cache, parsers, dated rules (`rules/rules.yaml`, embedded), day-status classifier, DuckDB `MarketStore`, collectors, analytics, strategy simulations (`Simulation/`), TSETMC filter (Jint), data health |
 | `src/Boors.Market.Cli` | `boors` CLI (copied): probe, collect, rebuild, health, query, market views, cache bundles |
-| `src/Boors.Market.Tests` | 152 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports, simulations) |
+| `src/Boors.Market.Tests` | 166 offline MSTest tests on captured golden files (copied, plus missed-session repair) and on hand-built price paths (reports, simulations) |
 | `src/Boors.Market.Services` | Application layer shared by node and desktop: API DTOs + source-generated JSON, the `IMarketApi` contract with **local** (in-process DuckDB) and **remote** (HTTP) implementations, the single-writer **job queue** + worker, the **Asia/Tehran scheduler**, **node sync** (bundle export/pull) |
-| `src/Boors.Market.Services.Tests` | 31 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull, simulation contract defaults and validation |
+| `src/Boors.Market.Services.Tests` | 33 offline tests: cron/schedule and catch-up, queue, job logs and traffic, run statistics, API contract on an empty store, JSON shape, remote client error mapping, bundle pull, simulation contract defaults and validation |
 | `src/Boors.Node` | Minimal-API host of `IMarketApi` (+ GetJobs, ExportBundle, Pull), problem details, response compression, health checks, optional operator token |
 | `src/Boors.Desktop` | WinUI 3 app (MVVM, DI, x:Bind), unpackaged + self-contained Windows App SDK, x64 |
 | `rules/rules.yaml` | Dated market rules (embedded into Boors.Market) |
@@ -51,8 +51,8 @@ the .NET SDK).
 dotnet build winui/Boors.WinUI.slnx -c Release
 
 # Tests (offline, Microsoft.Testing.Platform)
-cd winui/src/Boors.Market.Tests; dotnet test -c Release            # 140 tests
-cd winui/src/Boors.Market.Services.Tests; dotnet test -c Release   # 30 tests
+cd winui/src/Boors.Market.Tests; dotnet test -c Release            # 166 tests
+cd winui/src/Boors.Market.Services.Tests; dotnet test -c Release   # 33 tests
 
 # CLI against a data folder (copy, never move, a .boors-data folder into winui/.boors-data — it is git-ignored)
 dotnet run --project winui/src/Boors.Market.Cli -c Release -- --data winui/.boors-data health
@@ -259,9 +259,13 @@ afterwards), because a 13:35 end-of-day snapshot holds intraday ETF prices when 
   boilerplate's store; *Reload from cache* (`reload` job) replays the cache into the open store — the same steps as
   `boors rebuild` without deleting the file. As documented upstream, a rebuild uses the latest response of each
   request, so intraday snapshots merged earlier can differ slightly (e.g. TEDPIX 8,265,155.56 rebuilt vs
-  8,265,156.65 merged live).
-- The CLI is the boilerplate CLI: `boors --data winui/.boors-data health` and `market overview` print **byte-identical**
-  output to the boilerplate's build on a copy of the same data.
+  8,265,156.65 merged live). Both fill missed sessions from the cached per-day lists before the end-of-day append; a
+  session the cache holds only as an end-of-day snapshot stays missing until the repair job can fetch its list. An
+  end-of-day append after a missed session records no corporate actions, since its reference prices carry that session's move.
+- The CLI is the boilerplate CLI: `boors --data winui/.boors-data health` printed **byte-identical** output to the
+  boilerplate's build on a copy of the same data. `market overview` differs since a queue became a bid at the ceiling
+  with no offer inside the band: the book can list offers above the band, which nobody can take (on 2026-11-04, 247
+  buy queues against 116 when any offer disqualified one).
 
 ## Library choices
 

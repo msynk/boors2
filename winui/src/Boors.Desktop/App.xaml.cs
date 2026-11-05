@@ -164,7 +164,14 @@ public partial class App : Application
     private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         // Keep the workstation alive on an unexpected UI error; it is logged with its stack.
-        Get<ILogger<App>>().LogError(e.Exception, "Unhandled UI exception: {Message}", e.Message);
         e.Handled = true;
+        try
+        {
+            Host?.Services.GetRequiredService<ILogger<App>>().LogError(e.Exception, "Unhandled UI exception: {Message}", e.Message);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutting down: nothing left to log to.
+        }
     }
 }

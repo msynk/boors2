@@ -34,6 +34,9 @@ public sealed record ExcludedShare(long InsCode, string Symbol);
 /// </summary>
 public sealed partial class SimulationEditorViewModel(IMarketApi api, SimulationTracker tracker, ILogger<SimulationEditorViewModel> logger) : PageViewModel(api, logger)
 {
+    /// <summary>The largest amount taken from a number box: it accepts any number of digits, a decimal does not.</summary>
+    public const double MaxAmount = 1e15;
+
     public const string FromNow = "now";
     public const string Restart = "restart";
 
@@ -170,6 +173,7 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
     public async Task PrepareNewAsync(string preset = "balanced", DateOnly? start = null)
     {
         TrackWeights();
+        ClearTuning();
         EditingId = null;
         Message = null;
         Error = null;
@@ -190,6 +194,7 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
     public async Task PrepareEditAsync(string id)
     {
         TrackWeights();
+        ClearTuning();
         Message = null;
         Error = null;
         if (tracker.Find(id) is not { } saved || saved.Spec.Revisions.Count == 0)
@@ -210,6 +215,13 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
         PresetDescription = SimulationText.PresetDescription(Preset);
         Load(spec.Revisions[^1].Settings, saved.Symbols);
         await RunAsync(LoadPresetsAsync, "Simulation editor");
+    }
+
+    /// <summary>The last tuning belongs to the definition it ran on: its rows must not be applied to another one.</summary>
+    private void ClearTuning()
+    {
+        TuneRows = [];
+        TuneSummary = string.Empty;
     }
 
     private async Task LoadPresetsAsync(CancellationToken ct)
@@ -344,7 +356,7 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
             RegimeSessions = Math.Max(2, (int)N(RegimeSessions, 100)),
             DefensiveExposure = N(DefensivePct, 50) / 100,
             TargetVolatility = N(TargetVolatilityPct) / 100,
-            MinValue = (decimal)N(MinValueBillion) * Fmt.RialsPerBillionToman,
+            MinValue = (decimal)Math.Min(N(MinValueBillion), MaxAmount) * Fmt.RialsPerBillionToman,
             MinHistorySessions = (int)N(MinHistorySessions, 120),
             Fill = Fill,
             SlippageBps = N(SlippageBps),
@@ -381,7 +393,7 @@ public sealed partial class SimulationEditorViewModel(IMarketApi api, Simulation
                 Id = NewId(),
                 Name = Name.Trim(),
                 Mode = Mode,
-                Capital = (decimal)CapitalMillion * Fmt.RialsPerMillionToman,
+                Capital = (decimal)Math.Min(CapitalMillion, MaxAmount) * Fmt.RialsPerMillionToman,
                 Start = start,
                 Revisions = [new SettingsRevisionDto(start, settings)],
                 Preset = Mode == SimulationText.Automatic ? Preset : null,

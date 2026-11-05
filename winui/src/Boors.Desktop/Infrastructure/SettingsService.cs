@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Boors.Desktop.Infrastructure;
@@ -34,8 +35,8 @@ public sealed class SettingsService
 
     /// <summary>The data root this process opened (changing it needs a restart: the store is opened once).</summary>
     public string EffectiveDataRoot =>
-        Environment.GetEnvironmentVariable("BOORS_DATA") is { Length: > 0 } env ? Path.GetFullPath(env)
-        : overrides.TryGetValue("data", out var cli) ? Path.GetFullPath(cli)
+        overrides.TryGetValue("data", out var cli) ? Path.GetFullPath(cli)
+        : Environment.GetEnvironmentVariable("BOORS_DATA") is { Length: > 0 } env ? Path.GetFullPath(env)
         : string.IsNullOrWhiteSpace(Current.DataRoot) ? DefaultDataRoot
         : Path.GetFullPath(Current.DataRoot);
 
@@ -46,8 +47,8 @@ public sealed class SettingsService
     /// (whose store is rebuilt from the cache); BOORS_SIMULATIONS or --simulations moves them for one session.
     /// </summary>
     public string SimulationsFolder =>
-        Environment.GetEnvironmentVariable("BOORS_SIMULATIONS") is { Length: > 0 } env ? Path.GetFullPath(env)
-        : overrides.TryGetValue("simulations", out var cli) ? Path.GetFullPath(cli)
+        overrides.TryGetValue("simulations", out var cli) ? Path.GetFullPath(cli)
+        : Environment.GetEnvironmentVariable("BOORS_SIMULATIONS") is { Length: > 0 } env ? Path.GetFullPath(env)
         : Path.Combine(AppFolder, "simulations");
 
     public string EffectiveNode =>
@@ -113,14 +114,34 @@ public sealed class SettingsService
         try
         {
             if (File.Exists(SettingsPath))
-                return JsonSerializer.Deserialize(File.ReadAllBytes(SettingsPath), SettingsJsonContext.Default.AppSettings) ?? new AppSettings();
+            {
+                // Editors and PowerShell 5.1 start the file with a byte-order mark, which the JSON reader refuses.
+                ReadOnlySpan<byte> json = File.ReadAllBytes(SettingsPath);
+                if (json.StartsWith(Encoding.UTF8.Preamble))
+                    json = json[Encoding.UTF8.Preamble.Length..];
+                return JsonSerializer.Deserialize(json, SettingsJsonContext.Default.AppSettings) ?? new AppSettings();
+            }
         }
         catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException)
         {
             Warn($"Settings at {SettingsPath} could not be read ({e.Message}); using defaults");
+            KeepUnreadableSettings();
         }
 
         return new AppSettings();
+    }
+
+    /// <summary>The next save overwrites the file, so its data folder, node URL and token are kept next to it for the user to recover.</summary>
+    private void KeepUnreadableSettings()
+    {
+        try
+        {
+            File.Copy(SettingsPath, SettingsPath + ".unreadable", overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Warn($"Could not keep a copy of the unreadable settings: {e.Message}");
+        }
     }
 
     private void Save()

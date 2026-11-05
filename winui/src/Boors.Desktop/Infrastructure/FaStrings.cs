@@ -737,6 +737,8 @@ public static class FaStrings
         ["Each share gets its percentile among the buyable shares on every factor with a weight; the score is their weighted average, and the best-scored shares are bought. 0 leaves a factor out."] = "هر سهم در هر عاملِ دارای وزن، صدک خود را در میان سهام قابل خرید می‌گیرد؛ امتیاز، میانگین وزنی این صدک‌هاست و سهام با بهترین امتیاز خریده می‌شوند. صفر یعنی آن عامل کنار گذاشته شود.",
         ["Earnings yield (low P/E)"] = "بازده سود (P/E پایین)",
         ["Enter an amount greater than zero."] = "مقداری بیشتر از صفر وارد کنید.",
+        ["Enter at least one whole share."] = "دست‌کم یک سهم کامل وارد کنید.",
+        ["That amount is too large."] = "این مقدار بیش از حد بزرگ است.",
         ["Every factor to begin with; at each ranking it moves weight towards the factors whose ranking actually predicted the next month's returns (only months already over count), keeping half of the starting weights."] = "در آغاز همهٔ عوامل؛ در هر رتبه‌بندی وزن را به سمت عواملی می‌برد که رتبه‌بندی‌شان واقعاً بازده ماه بعد را پیش‌بینی کرده است (فقط ماه‌های تمام‌شده حساب می‌شوند) و نیمی از وزن‌های اولیه را نگه می‌دارد.",
         ["Excluded shares"] = "سهام کنار گذاشته",
         ["Execution and costs"] = "اجرا و هزینه‌ها",

@@ -188,6 +188,12 @@ public sealed partial class MarketCollector(
             logger.LogError(e, "Collection job {Job} failed", job);
             result = new CollectionResult(job, "failed", 0, 1, e.Message);
         }
+        catch (Exception e)
+        {
+            // A body that does not parse, a full disk: left "running", the scheduler would queue the job again every minute.
+            store.RecordRun(new CollectionRun(runId, job, options.Value.Node, started, timeProvider.GetUtcNow(), "failed", 0, 1, e.Message));
+            throw;
+        }
 
         store.RecordRun(new CollectionRun(runId, job, options.Value.Node, started, timeProvider.GetUtcNow(), result.Status, result.Items, result.Failures, result.Message));
         return result;

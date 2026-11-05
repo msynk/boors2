@@ -445,7 +445,7 @@ public sealed partial class JobsViewModel : PageViewModel
 
         // The detail pane follows a queue entry live (at most once a second).
         if (Detail?.EntryId is { } id && entries.FirstOrDefault(e => e.Id == id) is { } entry
-            && (entry.State == "running" || entry.State != detailState) && Now - lastLogRefresh > TimeSpan.FromSeconds(1))
+            && (entry.State != detailState || (entry.State == "running" && Now - lastLogRefresh > TimeSpan.FromSeconds(1))))
         {
             lastLogRefresh = Now;
             _ = ShowEntryAsync(id);

@@ -69,7 +69,7 @@ public sealed partial class MarketWatchPage : Page, IReloadable
             TimingText.Text = Loc.F("Loaded in {0} ms", Fmt.Num(ViewModel.LastLoadMilliseconds, "N0"));
     }
 
-    public void Reload() => _ = ApplyAsync();
+    public void Reload() => _ = ViewModel.LoadAsync();
 
     private static List<TableColumn> ProColumns() =>
     [
@@ -113,7 +113,11 @@ public sealed partial class MarketWatchPage : Page, IReloadable
 
     private void OnApply(object sender, RoutedEventArgs e) => _ = ApplyAsync();
 
-    private void OnClear(object sender, RoutedEventArgs e) => _ = ViewModel.ClearFilterAsync();
+    private void OnClear(object sender, RoutedEventArgs e)
+    {
+        FilterBox.Text = string.Empty;
+        _ = ViewModel.ClearFilterAsync();
+    }
 
     private void OnFilterKeyDown(object sender, KeyRoutedEventArgs e)
     {

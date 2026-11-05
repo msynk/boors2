@@ -334,6 +334,12 @@ public sealed partial class ReportsViewModel(IMarketApi api, ILogger<ReportsView
         Build();
     }
 
+    public override void Invalidate()
+    {
+        cache.Clear();
+        base.Invalidate();
+    }
+
     private static string? Iso(DateOnly? date) => date?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static int YearsOf(string period) => int.TryParse(period.TrimEnd('y'), CultureInfo.InvariantCulture, out var years) ? years : 5;
@@ -569,8 +575,8 @@ public sealed partial class ReportsViewModel(IMarketApi api, ILogger<ReportsView
             y.Year == s.CurrentYear ? s.CurrentMonth : null)));
 
         var averages = byMonth.Select((v, m) => (Month: m, Average: v.Count >= 3 ? v.Average() : (double?)null)).Where(x => x.Average is not null).ToList();
-        var best = averages.MaxBy(x => x.Average);
-        var worst = averages.MinBy(x => x.Average);
+        var best = averages.Count > 0 ? averages.MaxBy(x => x.Average) : default;
+        var worst = averages.Count > 0 ? averages.MinBy(x => x.Average) : default;
         var names = MonthNames;
         Kpis =
         [

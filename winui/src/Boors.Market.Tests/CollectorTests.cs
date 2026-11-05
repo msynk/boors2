@@ -104,6 +104,81 @@ public sealed class CollectorTests
     }
 
     [TestMethod]
+    public async Task End_of_day_compares_with_the_previous_session_only()
+    {
+        var collector = services.GetRequiredService<MarketCollector>();
+        var store = services.GetRequiredService<MarketStore>();
+
+        // Wednesday 10-14 is the session before Saturday 10-17: a different close is a real corporate action.
+        store.UpsertDailyBars([new ClassifiedBar(new DailyBar { InsCode = Golden.FooladInsCode, Date = new DateOnly(2026, 10, 14), Close = 2_000, Yesterday = 2_000, TradeCount = 1 }, DayStatus.Traded)], "history");
+        await collector.EndOfDayAsync(force: true, CachePolicy.CacheOnly, CancellationToken.None);
+        var implied = store.GetPriceAdjustments(Golden.FooladInsCode, "implied");
+        Assert.AreEqual(new DateOnly(2026, 10, 17), implied.Single().Date);
+    }
+
+    [TestMethod]
+    public async Task End_of_day_after_a_missed_session_calls_nothing_a_corporate_action()
+    {
+        var collector = services.GetRequiredService<MarketCollector>();
+        var store = services.GetRequiredService<MarketStore>();
+
+        // The last stored session is Sunday 10-11: Monday to Wednesday were never collected, and the snapshot's
+        // reference price is Wednesday's close, not an adjusted one.
+        store.UpsertDailyBars([new ClassifiedBar(new DailyBar { InsCode = Golden.FooladInsCode, Date = new DateOnly(2026, 10, 11), Close = 2_000, Yesterday = 2_000, TradeCount = 1 }, DayStatus.Traded)], "history");
+        var result = await collector.EndOfDayAsync(force: true, CachePolicy.CacheOnly, CancellationToken.None);
+
+        Assert.AreEqual("ok", result.Status, result.Message);
+        Assert.Contains("0 corporate actions", result.Message!);
+        Assert.IsEmpty(store.GetPriceAdjustments(Golden.FooladInsCode, "implied"));
+        Assert.AreEqual(4410m, store.GetDailyBars(Golden.FooladInsCode, new DateOnly(2026, 10, 17)).Single().Bar.Close);
+    }
+
+    [TestMethod]
+    public async Task A_replay_does_not_date_a_mid_session_snapshot_from_older_closing_prices()
+    {
+        var collector = services.GetRequiredService<MarketCollector>();
+        var store = services.GetRequiredService<MarketStore>();
+        var endpoints = services.GetRequiredService<TsetmcClient>().Endpoints;
+
+        // Sunday 10-18, 10:30 Iran time: the instruments job took a snapshot mid-session; the closing prices in the cache are Saturday's.
+        var midSession = new DateTimeOffset(2026, 10, 18, 7, 0, 0, TimeSpan.Zero);
+        time.SetUtcNow(midSession.AddHours(1));
+        await services.GetRequiredService<IRawCache>().StoreAsync(endpoints.MarketWatch(new MarketWatchQuery()), Golden.Read("tsetmc/market-watch-sample.json"), 200, "application/json", midSession);
+
+        var result = await collector.EndOfDayAsync(force: true, CachePolicy.CacheOnly, CancellationToken.None);
+
+        Assert.AreEqual("ok", result.Status, result.Message);
+        Assert.StartsWith("skipped", result.Message!);
+        Assert.IsEmpty(store.GetDailyBars(Golden.FooladInsCode, new DateOnly(2026, 10, 17)));
+    }
+
+    [TestMethod]
+    public async Task A_job_that_fails_unexpectedly_is_recorded_as_failed_not_left_running()
+    {
+        var collector = services.GetRequiredService<MarketCollector>();
+        var store = services.GetRequiredService<MarketStore>();
+        var endpoints = services.GetRequiredService<TsetmcClient>().Endpoints;
+
+        // A source answering 200 with a page instead of JSON: left "running", the scheduler would queue the job every minute.
+        await services.GetRequiredService<IRawCache>().StoreAsync(endpoints.MarketWatch(new MarketWatchQuery()), System.Text.Encoding.UTF8.GetBytes("<html>maintenance</html>"), 200, "text/html", time.GetUtcNow().AddMinutes(1));
+
+        var thrown = false;
+        try
+        {
+            await collector.EndOfDayAsync(force: true, CachePolicy.CacheOnly, CancellationToken.None);
+        }
+        catch (Exception e) when (e is JsonException or FormatException)
+        {
+            thrown = true;
+        }
+
+        Assert.IsTrue(thrown);
+        var run = store.GetRuns(time.GetUtcNow().AddDays(-1), "eod", 1).Single();
+        Assert.AreEqual("failed", run.Status);
+        Assert.IsNotNull(run.FinishedAt);
+    }
+
+    [TestMethod]
     public async Task Repair_fills_missed_sessions_oldest_first_and_never_past_a_hole()
     {
         var collector = services.GetRequiredService<MarketCollector>();
